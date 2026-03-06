@@ -13,6 +13,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class GlobalExceptionHandler {
 
+    // ── Auth exceptions ───────────────────────────────────────────
+
     @ExceptionHandler(EmailAlreadyExistsException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiResponse<Void> handleEmailExists(EmailAlreadyExistsException ex) {
@@ -31,6 +33,29 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ex.getMessage());
     }
 
+    // ── Expense / Category exceptions ─────────────────────────────
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleNotFound(ResourceNotFoundException ex) {
+        return ApiResponse.error(ex.getMessage());
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleIllegalArgument(IllegalArgumentException ex) {
+        return ApiResponse.error(ex.getMessage());
+    }
+
+    // 409 — e.g. deleting a category that still has expenses
+    @ExceptionHandler(IllegalStateException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleIllegalState(IllegalStateException ex) {
+        return ApiResponse.error(ex.getMessage());
+    }
+
+    // ── Validation ────────────────────────────────────────────────
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleValidation(MethodArgumentNotValidException ex) {
@@ -39,6 +64,8 @@ public class GlobalExceptionHandler {
                 .collect(Collectors.joining("; "));
         return ApiResponse.error(errors);
     }
+
+    // ── Catch-all ─────────────────────────────────────────────────
 
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
