@@ -26,12 +26,25 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ExpenseService {
 
+    private static final BigDecimal KHR_RATE = new BigDecimal("4000");
+
     private final ExpenseRepository  expenseRepository;
     private final CategoryRepository categoryRepository;
     private final UserRepository     userRepository;
     private final CategoryService    categoryService;
 
-    // ── List / filter ──────────────────────────────────────────────
+    // ── Conversion helper ─────────────────────────────────────────
+
+    /**
+     * Converts any amount to its USD equivalent.
+     * USD → unchanged; KHR → divided by 4000.
+     */
+    private BigDecimal toUsdBase(BigDecimal amount, Expense.Currency currency) {
+        if (currency == Expense.Currency.USD) return amount;
+        return amount.divide(KHR_RATE, 2, RoundingMode.HALF_UP);
+    }
+
+    // ── List / filter ─────────────────────────────────────────────
 
     public ExpenseDto.PageResponse getExpenses(
         Long userId, Long categoryId,
@@ -39,7 +52,7 @@ public class ExpenseService {
         Expense.Currency currency,
         int page, int size
     ) {
-        Pageable pageable = PageRequest.of(page, Math.min(size, 100));
+        Pageable pageable = PageRequest.of(page, Math.min(size, 200));
         Page<Expense> result = expenseRepository.findAll(
             ExpenseSpec.filter(userId, categoryId, from, to, currency),
             pageable
@@ -79,6 +92,7 @@ public class ExpenseService {
             .category(category)
             .amount(req.getAmount())
             .currency(req.getCurrency())
+            .amountBase(toUsdBase(req.getAmount(), req.getCurrency()))
             .date(req.getDate())
             .merchantName(req.getMerchantName())
             .note(req.getNote())
@@ -103,6 +117,7 @@ public class ExpenseService {
 
         expense.setAmount(req.getAmount());
         expense.setCurrency(req.getCurrency());
+        expense.setAmountBase(toUsdBase(req.getAmount(), req.getCurrency()));
         expense.setDate(req.getDate());
         expense.setCategory(category);
         expense.setMerchantName(req.getMerchantName());
@@ -126,36 +141,39 @@ public class ExpenseService {
     // ── Monthly summary ───────────────────────────────────────────
 
     public ExpenseDto.MonthlySummary getMonthlySummary(
-        Long userId, int year, int month, Expense.Currency currency
+        Long userId, int year, int month
     ) {
-        YearMonth ym = YearMonth.of(year, month);
+        YearMonth ym        = YearMonth.of(year, month);
         LocalDate startDate = ym.atDay(1);
         LocalDate endDate   = ym.plusMonths(1).atDay(1);
 
-        BigDecimal total = expenseRepository
-            .sumByUserAndMonthAndCurrency(userId, currency, startDate, endDate);
+        // Always sum amountBase (USD) — multiply by rate for KHR display
+        BigDecimal totalUsd = expenseRepository
+            .sumBaseByUserAndMonth(userId, startDate, endDate);
+        BigDecimal totalKhr = totalUsd.multiply(KHR_RATE).setScale(0, RoundingMode.HALF_UP);
 
         List<Object[]> rows = expenseRepository
-            .sumByCategoryForMonth(userId, currency, startDate, endDate);
+            .sumByCategoryForMonth(userId, startDate, endDate);
 
         List<ExpenseDto.CategoryBreakdown> breakdown = rows.stream().map(row -> {
             ExpenseDto.CategoryBreakdown b = new ExpenseDto.CategoryBreakdown();
             b.setCategoryName((String)  row[0]);
             b.setCategoryIcon((String)  row[1]);
             b.setCategoryColor((String) row[2]);
-            BigDecimal catTotal = (BigDecimal) row[3];
-            b.setTotal(catTotal);
-            b.setPercentage(total.compareTo(BigDecimal.ZERO) == 0 ? 0
-                : catTotal.multiply(BigDecimal.valueOf(100))
-                    .divide(total, 0, RoundingMode.HALF_UP).intValue());
+            BigDecimal catUsd = (BigDecimal) row[3];
+            b.setTotalUsd(catUsd);
+            b.setTotalKhr(catUsd.multiply(KHR_RATE).setScale(0, RoundingMode.HALF_UP));
+            b.setPercentage(totalUsd.compareTo(BigDecimal.ZERO) == 0 ? 0
+                : catUsd.multiply(BigDecimal.valueOf(100))
+                    .divide(totalUsd, 0, RoundingMode.HALF_UP).intValue());
             return b;
         }).toList();
 
         ExpenseDto.MonthlySummary summary = new ExpenseDto.MonthlySummary();
         summary.setYear(year);
         summary.setMonth(month);
-        summary.setTotalSpent(total);
-        summary.setCurrency(currency);
+        summary.setTotalSpentUsd(totalUsd);
+        summary.setTotalSpentKhr(totalKhr);
         summary.setBreakdown(breakdown);
         return summary;
     }
@@ -167,6 +185,7 @@ public class ExpenseService {
         r.setId(e.getId());
         r.setAmount(e.getAmount());
         r.setCurrency(e.getCurrency());
+        r.setAmountBase(e.getAmountBase());
         r.setDate(e.getDate());
         r.setMerchantName(e.getMerchantName());
         r.setNote(e.getNote());

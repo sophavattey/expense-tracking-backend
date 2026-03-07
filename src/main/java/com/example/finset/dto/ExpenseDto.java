@@ -41,6 +41,8 @@ public class ExpenseDto {
         private Long                  id;
         private BigDecimal            amount;
         private Expense.Currency      currency;
+        /** USD-normalised amount — always present, ready for charts/totals */
+        private BigDecimal            amountBase;
         private LocalDate             date;
         private CategoryDto.Response  category;
         private String                merchantName;
@@ -62,10 +64,12 @@ public class ExpenseDto {
 
     @Data
     public static class MonthlySummary {
-        private int              year;
-        private int              month;
-        private BigDecimal       totalSpent;
-        private Expense.Currency currency;
+        private int        year;
+        private int        month;
+        /** Total in USD (amountBase sum) */
+        private BigDecimal totalSpentUsd;
+        /** Total in KHR (amountBase × 4000) */
+        private BigDecimal totalSpentKhr;
         private List<CategoryBreakdown> breakdown;
     }
 
@@ -74,7 +78,10 @@ public class ExpenseDto {
         private String     categoryName;
         private String     categoryIcon;
         private String     categoryColor;
-        private BigDecimal total;
+        /** Category total in USD */
+        private BigDecimal totalUsd;
+        /** Category total in KHR */
+        private BigDecimal totalKhr;
         private int        percentage;
     }
 }

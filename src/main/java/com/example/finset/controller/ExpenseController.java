@@ -25,19 +25,18 @@ public class ExpenseController {
     @GetMapping
     public ResponseEntity<?> getAll(
         @AuthenticationPrincipal UserDetails principal,
-        @RequestParam(defaultValue = "0")  int page,
-        @RequestParam(defaultValue = "20") int size,
-        @RequestParam(required = false)    Long categoryId,
+        @RequestParam(defaultValue = "0")   int page,
+        @RequestParam(defaultValue = "20")  int size,
+        @RequestParam(required = false)     Long categoryId,
         @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
         @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-        @RequestParam(required = false)    Expense.Currency currency
+        @RequestParam(required = false)     Expense.Currency currency
     ) {
         Long userId = Long.parseLong(principal.getUsername());
-        ExpenseDto.PageResponse result = expenseService.getExpenses(
-            userId, categoryId, from, to, currency, page, size);
-        return ResponseEntity.ok(Map.of("success", true, "data", result));
+        return ResponseEntity.ok(Map.of("success", true,
+            "data", expenseService.getExpenses(userId, categoryId, from, to, currency, page, size)));
     }
 
     @GetMapping("/{id}")
@@ -46,8 +45,8 @@ public class ExpenseController {
         @PathVariable Long id
     ) {
         Long userId = Long.parseLong(principal.getUsername());
-        ExpenseDto.Response expense = expenseService.getById(userId, id);
-        return ResponseEntity.ok(Map.of("success", true, "data", expense));
+        return ResponseEntity.ok(Map.of("success", true,
+            "data", expenseService.getById(userId, id)));
     }
 
     @PostMapping
@@ -56,11 +55,10 @@ public class ExpenseController {
         @Valid @RequestBody ExpenseDto.Request req
     ) {
         Long userId = Long.parseLong(principal.getUsername());
-        ExpenseDto.Response created = expenseService.create(userId, req);
         return ResponseEntity.status(201).body(Map.of(
             "success", true,
             "message", "Expense recorded",
-            "data", created
+            "data", expenseService.create(userId, req)
         ));
     }
 
@@ -71,11 +69,10 @@ public class ExpenseController {
         @Valid @RequestBody ExpenseDto.Request req
     ) {
         Long userId = Long.parseLong(principal.getUsername());
-        ExpenseDto.Response updated = expenseService.update(userId, id, req);
         return ResponseEntity.ok(Map.of(
             "success", true,
             "message", "Expense updated",
-            "data", updated
+            "data", expenseService.update(userId, id, req)
         ));
     }
 
@@ -89,20 +86,22 @@ public class ExpenseController {
         return ResponseEntity.ok(Map.of("success", true, "message", "Expense deleted"));
     }
 
+    /**
+     * GET /api/expenses/summary?year=2026&month=3
+     * Returns totals in both USD and KHR derived from amountBase.
+     * The `currency` param is removed — summary is always currency-agnostic.
+     */
     @GetMapping("/summary")
     public ResponseEntity<?> summary(
         @AuthenticationPrincipal UserDetails principal,
         @RequestParam(required = false) Integer year,
-        @RequestParam(required = false) Integer month,
-        @RequestParam(defaultValue = "USD") Expense.Currency currency
+        @RequestParam(required = false) Integer month
     ) {
         Long userId = Long.parseLong(principal.getUsername());
         YearMonth ym = YearMonth.now();
         int y = year  != null ? year  : ym.getYear();
         int m = month != null ? month : ym.getMonthValue();
-
-        ExpenseDto.MonthlySummary summary =
-            expenseService.getMonthlySummary(userId, y, m, currency);
-        return ResponseEntity.ok(Map.of("success", true, "data", summary));
+        return ResponseEntity.ok(Map.of("success", true,
+            "data", expenseService.getMonthlySummary(userId, y, m)));
     }
 }

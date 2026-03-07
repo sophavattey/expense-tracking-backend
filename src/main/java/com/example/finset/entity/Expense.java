@@ -26,21 +26,31 @@ public class Expense {
     @JoinColumn(name = "category_id", nullable = false)
     private Category category;
 
+    /** Original amount the user entered */
     @Column(nullable = false, precision = 15, scale = 2)
     private BigDecimal amount;
 
+    /** Original currency (USD or KHR) */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 3)
     private Currency currency = Currency.USD;
+
+    /**
+     * Amount normalised to USD for totals, budgets, and charts.
+     * USD expenses  → same as amount
+     * KHR expenses  → amount / 4000  (fixed Cambodian rate)
+     */
+    @Column(nullable = false, precision = 15, scale = 2)
+    private BigDecimal amountBase;
 
     @Column(nullable = false)
     private LocalDate date;
 
     @Column(length = 150)
-    private String merchantName;   // optional
+    private String merchantName;
 
     @Column(length = 500)
-    private String note;           // optional
+    private String note;
 
     @Enumerated(EnumType.STRING)
     @Column(length = 20)
@@ -52,7 +62,6 @@ public class Expense {
     @UpdateTimestamp
     private LocalDateTime updatedAt;
 
-    public enum Currency { USD, KHR }
-
+    public enum Currency      { USD, KHR }
     public enum PaymentMethod { CASH, CARD, KHQR, BANK, APP, OTHER }
 }

@@ -23,36 +23,35 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long>,
 
     Optional<Expense> findByIdAndUserId(Long id, Long userId);
 
-    // Used by CategoryService.delete() to block deletion when expenses exist
     long countByCategoryId(Long categoryId);
 
+    // ── Summary queries — always use amountBase (USD-normalised) ──
+
+    /** Total spent in USD for a given month */
     @Query("""
-        SELECT COALESCE(SUM(e.amount), 0) FROM Expense e
-        WHERE e.user.id   = :userId
-          AND e.currency  = :currency
-          AND e.date      >= :startDate
-          AND e.date      <  :endDate
+        SELECT COALESCE(SUM(e.amountBase), 0) FROM Expense e
+        WHERE e.user.id  = :userId
+          AND e.date    >= :startDate
+          AND e.date     < :endDate
         """)
-    BigDecimal sumByUserAndMonthAndCurrency(
+    BigDecimal sumBaseByUserAndMonth(
         @Param("userId")    Long userId,
-        @Param("currency")  Expense.Currency currency,
         @Param("startDate") LocalDate startDate,
         @Param("endDate")   LocalDate endDate
     );
 
+    /** Per-category breakdown for a given month (USD base) */
     @Query("""
-        SELECT c.name, c.icon, c.color, SUM(e.amount)
+        SELECT c.name, c.icon, c.color, SUM(e.amountBase)
         FROM Expense e JOIN e.category c
-        WHERE e.user.id   = :userId
-          AND e.currency  = :currency
-          AND e.date      >= :startDate
-          AND e.date      <  :endDate
+        WHERE e.user.id  = :userId
+          AND e.date    >= :startDate
+          AND e.date     < :endDate
         GROUP BY c.id, c.name, c.icon, c.color
-        ORDER BY SUM(e.amount) DESC
+        ORDER BY SUM(e.amountBase) DESC
         """)
     List<Object[]> sumByCategoryForMonth(
         @Param("userId")    Long userId,
-        @Param("currency")  Expense.Currency currency,
         @Param("startDate") LocalDate startDate,
         @Param("endDate")   LocalDate endDate
     );
