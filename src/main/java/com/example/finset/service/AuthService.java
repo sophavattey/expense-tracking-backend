@@ -41,11 +41,19 @@ public class AuthService {
         if (userRepository.existsByEmail(req.getEmail())) {
             throw new EmailAlreadyExistsException(req.getEmail());
         }
+
+        // Validate preferredCurrency — only USD or KHR allowed, default USD
+        String currency = "USD";
+        if ("KHR".equalsIgnoreCase(req.getPreferredCurrency())) {
+            currency = "KHR";
+        }
+
         User user = User.builder()
                 .email(req.getEmail())
                 .password(passwordEncoder.encode(req.getPassword()))
                 .name(req.getName())
                 .provider(User.AuthProvider.LOCAL)
+                .preferredCurrency(currency)   // ✅ NEW
                 .build();
         return userRepository.save(user);
     }

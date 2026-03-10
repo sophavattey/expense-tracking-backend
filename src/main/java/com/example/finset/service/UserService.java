@@ -7,6 +7,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -21,17 +23,14 @@ public class UserService {
     @Transactional
     public User findOrCreateGoogleUser(String email, String name,
                                        String picture, String providerId) {
-        // 1. Try match by Google sub (most reliable)
         return userRepository
                 .findByProviderAndProviderId(User.AuthProvider.GOOGLE, providerId)
                 .map(existing -> {
-                    // Update mutable fields on re-login
                     existing.setName(name);
                     existing.setAvatar(picture);
                     return userRepository.save(existing);
                 })
                 .orElseGet(() ->
-                    // 2. Try match by email (user may have registered with email/pass first)
                     userRepository.findByEmail(email)
                             .map(existing -> {
                                 existing.setProvider(User.AuthProvider.GOOGLE);
@@ -40,7 +39,6 @@ public class UserService {
                                 return userRepository.save(existing);
                             })
                             .orElseGet(() -> {
-                                // 3. Brand new user
                                 log.info("Creating new Google user: {}", email);
                                 return userRepository.save(User.builder()
                                         .email(email)
@@ -51,5 +49,17 @@ public class UserService {
                                         .build());
                             })
                 );
+    }
+
+    // update preferred currency for a user — only USD or KHR accepted
+    @Transactional
+    public User updatePreferredCurrency(UUID userId, String currency) {
+        if (!"USD".equals(currency) && !"KHR".equals(currency)) {
+            throw new IllegalArgumentException("Currency must be USD or KHR");
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        user.setPreferredCurrency(currency);
+        return userRepository.save(user);
     }
 }

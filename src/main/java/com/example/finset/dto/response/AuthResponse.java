@@ -14,4 +14,5 @@ public class AuthResponse {
     private String avatar;
     private String role;
     private String provider;
+    private String preferredCurrency;   
 }

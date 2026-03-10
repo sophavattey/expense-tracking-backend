@@ -15,14 +15,13 @@ public class User {
 
     @Id
     @GeneratedValue
-    @UuidGenerator                          // Hibernate 6 — generates UUID v4
+    @UuidGenerator
     @Column(updatable = false, nullable = false, columnDefinition = "uuid")
     private UUID id;
 
     @Column(nullable = false)
     private String email;
 
-    /** Null for OAuth-only users */
     @Column
     private String password;
 
@@ -37,7 +36,6 @@ public class User {
     @Builder.Default
     private AuthProvider provider = AuthProvider.LOCAL;
 
-    /** Google sub ID when provider = GOOGLE */
     @Column(name = "provider_id")
     private String providerId;
 
@@ -45,6 +43,10 @@ public class User {
     @Column(nullable = false)
     @Builder.Default
     private Role role = Role.USER;
+
+    @Column(name = "preferred_currency", nullable = false, columnDefinition = "varchar(255) default 'USD'")
+    @Builder.Default
+    private String preferredCurrency = "USD";
 
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default

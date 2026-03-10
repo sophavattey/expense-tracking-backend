@@ -72,7 +72,7 @@ public class AuthController {
     public ApiResponse<Void> logout(@AuthenticationPrincipal UserDetails userDetails,
                                     HttpServletResponse response) {
         if (userDetails != null) {
-            UUID userId = UUID.fromString(userDetails.getUsername());          // ← UUID
+            UUID userId = UUID.fromString(userDetails.getUsername());
             userRepository.findById(userId).ifPresent(authService::revokeAllTokens);
             log.info("User {} logged out", userId);
         }
@@ -82,7 +82,7 @@ public class AuthController {
 
     @GetMapping("/me")
     public ApiResponse<AuthResponse> me(@AuthenticationPrincipal UserDetails userDetails) {
-        UUID userId = UUID.fromString(userDetails.getUsername());              // ← UUID
+        UUID userId = UUID.fromString(userDetails.getUsername());
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         return ApiResponse.ok(toDto(user));
@@ -93,7 +93,8 @@ public class AuthController {
         cookieService.setRefreshTokenCookie(response, authService.createRefreshToken(user));
     }
 
-    private AuthResponse toDto(User user) {
+    // preferredCurrency now included in every auth response
+    AuthResponse toDto(User user) {
         return AuthResponse.builder()
                 .id(user.getId())
                 .email(user.getEmail())
@@ -101,6 +102,7 @@ public class AuthController {
                 .avatar(user.getAvatar())
                 .role(user.getRole().name())
                 .provider(user.getProvider().name())
+                .preferredCurrency(user.getPreferredCurrency())   // ✅ NEW
                 .build();
     }
 }
