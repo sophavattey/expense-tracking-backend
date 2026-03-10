@@ -7,17 +7,13 @@ import org.springframework.data.jpa.domain.Specification;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public class ExpenseSpec {
 
-    /**
-     * Pure predicate-only Specification — no fetch joins here.
-     * Category loading is handled by @EntityGraph on the repository method,
-     * which Hibernate applies only to the data query, never the count query.
-     */
     public static Specification<Expense> filter(
-            Long userId,
-            Long categoryId,
+            UUID userId,                      // ← UUID
+            UUID categoryId,                  // ← UUID
             LocalDate from,
             LocalDate to,
             Expense.Currency currency

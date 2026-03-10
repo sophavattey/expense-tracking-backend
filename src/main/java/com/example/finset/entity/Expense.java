@@ -4,10 +4,12 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.UuidGenerator;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "expenses")
@@ -15,8 +17,10 @@ import java.time.LocalDateTime;
 public class Expense {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue
+    @UuidGenerator
+    @Column(updatable = false, nullable = false, columnDefinition = "uuid")
+    private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
@@ -37,8 +41,8 @@ public class Expense {
 
     /**
      * Amount normalised to USD for totals, budgets, and charts.
-     * USD expenses  → same as amount
-     * KHR expenses  → amount / 4000  (fixed Cambodian rate)
+     * USD expenses → same as amount
+     * KHR expenses → amount / 4000 (fixed Cambodian rate)
      */
     @Column(nullable = false, precision = 15, scale = 2)
     private BigDecimal amountBase;

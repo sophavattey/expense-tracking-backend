@@ -2,7 +2,10 @@ package com.example.finset.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.UuidGenerator;
+
 import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "users",
@@ -11,8 +14,10 @@ import java.time.Instant;
 public class User {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue
+    @UuidGenerator                          // Hibernate 6 — generates UUID v4
+    @Column(updatable = false, nullable = false, columnDefinition = "uuid")
+    private UUID id;
 
     @Column(nullable = false)
     private String email;

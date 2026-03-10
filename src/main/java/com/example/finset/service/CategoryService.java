@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -19,9 +20,9 @@ public class CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final UserRepository     userRepository;
-    private final ExpenseRepository  expenseRepository; // ← needed for count check
+    private final ExpenseRepository  expenseRepository;
 
-    public List<CategoryDto.Response> getAllForUser(Long userId) {
+    public List<CategoryDto.Response> getAllForUser(UUID userId) {             // ← UUID
         return categoryRepository.findAllVisibleToUser(userId)
             .stream()
             .map(c -> toResponse(c, userId))
@@ -29,7 +30,7 @@ public class CategoryService {
     }
 
     @Transactional
-    public CategoryDto.Response create(Long userId, CategoryDto.Request req) {
+    public CategoryDto.Response create(UUID userId, CategoryDto.Request req) { // ← UUID
         if (categoryRepository.existsByUserIdAndNameIgnoreCase(userId, req.getName())) {
             throw new IllegalArgumentException(
                 "You already have a category named '" + req.getName() + "'");
@@ -49,7 +50,7 @@ public class CategoryService {
     }
 
     @Transactional
-    public CategoryDto.Response update(Long userId, Long categoryId, CategoryDto.Request req) {
+    public CategoryDto.Response update(UUID userId, UUID categoryId, CategoryDto.Request req) { // ← UUID
         Category category = getOwnedCategory(userId, categoryId);
 
         if (!category.getName().equalsIgnoreCase(req.getName()) &&
@@ -66,10 +67,9 @@ public class CategoryService {
     }
 
     @Transactional
-    public void delete(Long userId, Long categoryId) {
+    public void delete(UUID userId, UUID categoryId) {                         // ← UUID
         Category category = getOwnedCategory(userId, categoryId);
 
-        // Check BEFORE hitting the DB — gives a clear 409 instead of a FK constraint crash
         long count = expenseRepository.countByCategoryId(categoryId);
         if (count > 0) {
             throw new IllegalStateException(
@@ -80,7 +80,7 @@ public class CategoryService {
         categoryRepository.delete(category);
     }
 
-    private Category getOwnedCategory(Long userId, Long categoryId) {
+    private Category getOwnedCategory(UUID userId, UUID categoryId) {          // ← UUID
         Category category = categoryRepository.findById(categoryId)
             .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
 
@@ -93,7 +93,7 @@ public class CategoryService {
         return category;
     }
 
-    public CategoryDto.Response toResponse(Category c, Long currentUserId) {
+    public CategoryDto.Response toResponse(Category c, UUID currentUserId) {  // ← UUID
         CategoryDto.Response r = new CategoryDto.Response();
         r.setId(c.getId());
         r.setName(c.getName());

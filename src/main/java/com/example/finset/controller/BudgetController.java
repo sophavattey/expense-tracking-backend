@@ -10,6 +10,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/budgets")
@@ -18,25 +19,19 @@ public class BudgetController {
 
     private final BudgetService budgetService;
 
-    /**
-     * GET /api/budgets/status
-     * Returns all budgets with live spent / remaining / percentage.
-     * This is the primary endpoint used by the frontend dashboard and budget page.
-     */
     @GetMapping("/status")
     public ResponseEntity<?> getStatus(@AuthenticationPrincipal UserDetails principal) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         return ResponseEntity.ok(Map.of("success", true,
             "data", budgetService.getStatus(userId)));
     }
 
-    /** POST /api/budgets — create a new budget */
     @PostMapping
     public ResponseEntity<?> create(
         @AuthenticationPrincipal UserDetails principal,
         @Valid @RequestBody BudgetDto.Request req
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         return ResponseEntity.status(201).body(Map.of(
             "success", true,
             "message", "Budget created",
@@ -44,14 +39,13 @@ public class BudgetController {
         ));
     }
 
-    /** PUT /api/budgets/{id} — update a budget */
     @PutMapping("/{id}")
     public ResponseEntity<?> update(
         @AuthenticationPrincipal UserDetails principal,
-        @PathVariable Long id,
+        @PathVariable UUID id,                                                // ← UUID
         @Valid @RequestBody BudgetDto.Request req
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         return ResponseEntity.ok(Map.of(
             "success", true,
             "message", "Budget updated",
@@ -59,13 +53,12 @@ public class BudgetController {
         ));
     }
 
-    /** DELETE /api/budgets/{id} */
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(
         @AuthenticationPrincipal UserDetails principal,
-        @PathVariable Long id
+        @PathVariable UUID id                                                 // ← UUID
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         budgetService.delete(userId, id);
         return ResponseEntity.ok(Map.of("success", true, "message", "Budget deleted"));
     }

@@ -7,15 +7,14 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 public class BudgetDto {
 
-    /* ── Create / Update ─────────────────────────────────────── */
     @Data
     public static class Request {
-
         /** null → overall budget */
-        private Long categoryId;
+        private UUID categoryId;               // ← UUID
 
         @NotNull(message = "Period is required")
         private Budget.Period period;
@@ -27,16 +26,14 @@ public class BudgetDto {
 
         private boolean recurring = true;
 
-        /** Required only when recurring = false */
         private LocalDate startDate;
         private LocalDate endDate;
     }
 
-    /* ── Simple response (create / update / list) ────────────── */
     @Data
     public static class Response {
-        private Long                 id;
-        private CategoryDto.Response category;   // null = overall budget
+        private UUID                 id;       // ← UUID
+        private CategoryDto.Response category;
         private Budget.Period        period;
         private BigDecimal           limitUsd;
         private boolean              recurring;
@@ -44,11 +41,10 @@ public class BudgetDto {
         private LocalDate            endDate;
     }
 
-    /* ── Rich status response (budget tracker) ───────────────── */
     @Data
     public static class Status {
-        private Long                 id;
-        private CategoryDto.Response category;   // null = overall budget
+        private UUID                 id;       // ← UUID
+        private CategoryDto.Response category;
         private Budget.Period        period;
         private BigDecimal           limitUsd;
         private BigDecimal           limitKhr;
@@ -56,19 +52,18 @@ public class BudgetDto {
         private BigDecimal           spentKhr;
         private BigDecimal           remainingUsd;
         private BigDecimal           remainingKhr;
-        private int                  percentage;  // 0–100+ (can exceed if over budget)
+        private int                  percentage;
         private boolean              isOver;
-        private String               periodLabel; // e.g. "Mar 2026", "Week of Mar 3"
+        private String               periodLabel;
         private LocalDate            periodStart;
         private LocalDate            periodEnd;
     }
 
-    /* ── Summary across all budgets ──────────────────────────── */
     @Data
     public static class Summary {
         private int        totalBudgets;
         private int        overBudgetCount;
-        private int        nearLimitCount;   // >= 80% but not over
+        private int        nearLimitCount;
         private BigDecimal totalLimitUsd;
         private BigDecimal totalSpentUsd;
         private BigDecimal totalRemainingUsd;

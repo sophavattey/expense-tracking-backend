@@ -7,29 +7,29 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
-public interface CategoryRepository extends JpaRepository<Category, Long> {
+public interface CategoryRepository extends JpaRepository<Category, UUID> {   // ← UUID
 
-    // All categories visible to a user = system defaults + their own customs
     @Query("""
         SELECT c FROM Category c
         WHERE c.user IS NULL
            OR c.user.id = :userId
         ORDER BY c.isDefault DESC, c.name ASC
         """)
-    List<Category> findAllVisibleToUser(@Param("userId") Long userId);
+    List<Category> findAllVisibleToUser(@Param("userId") UUID userId);        // ← UUID
 
-    // Only user's custom categories
-    List<Category> findByUserIdOrderByNameAsc(Long userId);
+    List<Category> findByUserIdOrderByNameAsc(UUID userId);                   // ← UUID
 
-    // Check duplicate name for a user's custom category
-    boolean existsByUserIdAndNameIgnoreCase(Long userId, String name);
+    boolean existsByUserIdAndNameIgnoreCase(UUID userId, String name);        // ← UUID
 
-    // Find a specific category that belongs to a user or is a system default
     @Query("""
         SELECT c FROM Category c
         WHERE c.id = :id
           AND (c.user IS NULL OR c.user.id = :userId)
         """)
-    Optional<Category> findByIdAndVisibleToUser(@Param("id") Long id, @Param("userId") Long userId);
+    Optional<Category> findByIdAndVisibleToUser(
+        @Param("id")     UUID id,                                             // ← UUID
+        @Param("userId") UUID userId                                          // ← UUID
+    );
 }

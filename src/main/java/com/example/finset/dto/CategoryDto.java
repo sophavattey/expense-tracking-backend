@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 
+import java.util.UUID;
+
 public class CategoryDto {
 
     @Data
@@ -21,14 +23,11 @@ public class CategoryDto {
 
     @Data
     public static class Response {
-        private Long   id;
+        private UUID   id;
         private String name;
         private String icon;
         private String color;
 
-        // Lombok generates isDefault()/isOwned() for boolean fields starting with "is".
-        // Jackson strips the "is" prefix → serializes as "default"/"owned" by default.
-        // @JsonProperty forces the exact key name the frontend expects.
         @JsonProperty("isDefault")
         private boolean isDefault;
 

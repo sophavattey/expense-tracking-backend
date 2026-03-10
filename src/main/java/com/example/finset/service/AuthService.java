@@ -30,13 +30,11 @@ import java.util.HexFormat;
 @Slf4j
 public class AuthService {
 
-    private final UserRepository userRepository;
+    private final UserRepository         userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
-    private final JwtService jwtService;
-    private final PasswordEncoder passwordEncoder;
-    private final AppProperties appProperties;
-
-    /* ── Register ───────────────────────────────────────────────── */
+    private final JwtService             jwtService;
+    private final PasswordEncoder        passwordEncoder;
+    private final AppProperties          appProperties;
 
     @Transactional
     public User register(RegisterRequest req) {
@@ -52,13 +50,10 @@ public class AuthService {
         return userRepository.save(user);
     }
 
-    /* ── Login ──────────────────────────────────────────────────── */
-
     @Transactional(readOnly = true)
     public User login(LoginRequest req) {
         User user = userRepository.findByEmail(req.getEmail())
-                .orElseThrow(() -> new InvalidCredentialsException());
-
+                .orElseThrow(InvalidCredentialsException::new);
         if (user.getPassword() == null ||
             !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
             throw new InvalidCredentialsException();
@@ -66,17 +61,10 @@ public class AuthService {
         return user;
     }
 
-    /* ── Refresh token lifecycle ────────────────────────────────── */
-
-    /**
-     * Creates a new refresh token, persists a HASH of it, returns the raw value.
-     * The raw value goes into the HTTP-only cookie; the hash lives in the DB.
-     */
     @Transactional
     public String createRefreshToken(User user) {
-        String rawToken = jwtService.generateRefreshToken(user);
-        String tokenHash = sha256(rawToken);
-
+        String rawToken   = jwtService.generateRefreshToken(user);
+        String tokenHash  = sha256(rawToken);
         Instant expiresAt = Instant.now().plusMillis(
                 appProperties.getJwt().getRefreshExpirationMs());
 
@@ -89,17 +77,8 @@ public class AuthService {
         return rawToken;
     }
 
-    /**
-     * Validates the refresh token cookie:
-     * 1. Parse the JWT signature
-     * 2. Look up the hash in the DB
-     * 3. Check it isn't revoked or expired
-     * Returns the user if valid.
-     */
     @Transactional
-    public User validateAndRotateRefreshToken(String rawToken,
-                                              String[] newRefreshTokenHolder) {
-        // 1. Verify JWT signature & expiry
+    public User validateAndRotateRefreshToken(String rawToken, String[] newRefreshTokenHolder) {
         Claims claims;
         try {
             claims = jwtService.validateRefreshToken(rawToken);
@@ -107,42 +86,32 @@ public class AuthService {
             throw new TokenRefreshException("Invalid or expired refresh token");
         }
 
-        // 2. Check DB record
         String tokenHash = sha256(rawToken);
         RefreshToken stored = refreshTokenRepository.findByTokenHash(tokenHash)
                 .orElseThrow(() -> new TokenRefreshException("Refresh token not found"));
 
         if (stored.isRevoked()) {
-            // Possible token reuse — revoke ALL tokens for this user (security measure)
             refreshTokenRepository.revokeAllByUser(stored.getUser());
             throw new TokenRefreshException("Refresh token has been revoked");
         }
-
         if (stored.getExpiresAt().isBefore(Instant.now())) {
             stored.setRevoked(true);
             refreshTokenRepository.save(stored);
             throw new TokenRefreshException("Refresh token has expired");
         }
 
-        // 3. Rotate: revoke old, issue new
         stored.setRevoked(true);
         refreshTokenRepository.save(stored);
 
         User user = stored.getUser();
-        String newRaw = createRefreshToken(user);
-        newRefreshTokenHolder[0] = newRaw;
-
+        newRefreshTokenHolder[0] = createRefreshToken(user);
         return user;
     }
-
-    /* ── Logout ─────────────────────────────────────────────────── */
 
     @Transactional
     public void revokeAllTokens(User user) {
         refreshTokenRepository.revokeAllByUser(user);
     }
-
-    /* ── Util ───────────────────────────────────────────────────── */
 
     private static String sha256(String input) {
         try {

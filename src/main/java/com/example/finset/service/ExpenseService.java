@@ -21,6 +21,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -33,21 +34,13 @@ public class ExpenseService {
     private final UserRepository     userRepository;
     private final CategoryService    categoryService;
 
-    // ── Conversion helper ─────────────────────────────────────────
-
-    /**
-     * Converts any amount to its USD equivalent.
-     * USD → unchanged; KHR → divided by 4000.
-     */
     private BigDecimal toUsdBase(BigDecimal amount, Expense.Currency currency) {
         if (currency == Expense.Currency.USD) return amount;
         return amount.divide(KHR_RATE, 2, RoundingMode.HALF_UP);
     }
 
-    // ── List / filter ─────────────────────────────────────────────
-
     public ExpenseDto.PageResponse getExpenses(
-        Long userId, Long categoryId,
+        UUID userId, UUID categoryId,                                          // ← UUID
         LocalDate from, LocalDate to,
         Expense.Currency currency,
         int page, int size
@@ -68,18 +61,14 @@ public class ExpenseService {
         return resp;
     }
 
-    // ── Get single ────────────────────────────────────────────────
-
-    public ExpenseDto.Response getById(Long userId, Long expenseId) {
+    public ExpenseDto.Response getById(UUID userId, UUID expenseId) {          // ← UUID
         Expense expense = expenseRepository.findByIdAndUserId(expenseId, userId)
             .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
         return toResponse(expense);
     }
 
-    // ── Create ────────────────────────────────────────────────────
-
     @Transactional
-    public ExpenseDto.Response create(Long userId, ExpenseDto.Request req) {
+    public ExpenseDto.Response create(UUID userId, ExpenseDto.Request req) {   // ← UUID
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
@@ -104,10 +93,8 @@ public class ExpenseService {
         return toResponse(expenseRepository.save(expense));
     }
 
-    // ── Update ────────────────────────────────────────────────────
-
     @Transactional
-    public ExpenseDto.Response update(Long userId, Long expenseId, ExpenseDto.Request req) {
+    public ExpenseDto.Response update(UUID userId, UUID expenseId, ExpenseDto.Request req) { // ← UUID
         Expense expense = expenseRepository.findByIdAndUserId(expenseId, userId)
             .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
 
@@ -129,25 +116,18 @@ public class ExpenseService {
         return toResponse(expenseRepository.save(expense));
     }
 
-    // ── Delete ────────────────────────────────────────────────────
-
     @Transactional
-    public void delete(Long userId, Long expenseId) {
+    public void delete(UUID userId, UUID expenseId) {                          // ← UUID
         Expense expense = expenseRepository.findByIdAndUserId(expenseId, userId)
             .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
         expenseRepository.delete(expense);
     }
 
-    // ── Monthly summary ───────────────────────────────────────────
-
-    public ExpenseDto.MonthlySummary getMonthlySummary(
-        Long userId, int year, int month
-    ) {
+    public ExpenseDto.MonthlySummary getMonthlySummary(UUID userId, int year, int month) { // ← UUID
         YearMonth ym        = YearMonth.of(year, month);
         LocalDate startDate = ym.atDay(1);
         LocalDate endDate   = ym.plusMonths(1).atDay(1);
 
-        // Always sum amountBase (USD) — multiply by rate for KHR display
         BigDecimal totalUsd = expenseRepository
             .sumBaseByUserAndMonth(userId, startDate, endDate);
         BigDecimal totalKhr = totalUsd.multiply(KHR_RATE).setScale(0, RoundingMode.HALF_UP);
@@ -178,8 +158,6 @@ public class ExpenseService {
         return summary;
     }
 
-    // ── Mapper ────────────────────────────────────────────────────
-
     private ExpenseDto.Response toResponse(Expense e) {
         ExpenseDto.Response r = new ExpenseDto.Response();
         r.setId(e.getId());
@@ -192,7 +170,7 @@ public class ExpenseService {
         r.setPaymentMethod(e.getPaymentMethod());
         r.setCreatedAt(e.getCreatedAt());
         r.setUpdatedAt(e.getUpdatedAt());
-        Long userId = e.getUser() != null ? e.getUser().getId() : null;
+        UUID userId = e.getUser() != null ? e.getUser().getId() : null;       // ← UUID
         r.setCategory(categoryService.toResponse(e.getCategory(), userId));
         return r;
     }

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/expenses")
@@ -25,16 +26,16 @@ public class ExpenseController {
     @GetMapping
     public ResponseEntity<?> getAll(
         @AuthenticationPrincipal UserDetails principal,
-        @RequestParam(defaultValue = "0")   int page,
-        @RequestParam(defaultValue = "20")  int size,
-        @RequestParam(required = false)     Long categoryId,
+        @RequestParam(defaultValue = "0")  int page,
+        @RequestParam(defaultValue = "20") int size,
+        @RequestParam(required = false)    UUID categoryId,                   // ← UUID
         @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
         @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-        @RequestParam(required = false)     Expense.Currency currency
+        @RequestParam(required = false)    Expense.Currency currency
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         return ResponseEntity.ok(Map.of("success", true,
             "data", expenseService.getExpenses(userId, categoryId, from, to, currency, page, size)));
     }
@@ -42,9 +43,9 @@ public class ExpenseController {
     @GetMapping("/{id}")
     public ResponseEntity<?> getById(
         @AuthenticationPrincipal UserDetails principal,
-        @PathVariable Long id
+        @PathVariable UUID id                                                 // ← UUID
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         return ResponseEntity.ok(Map.of("success", true,
             "data", expenseService.getById(userId, id)));
     }
@@ -54,50 +55,45 @@ public class ExpenseController {
         @AuthenticationPrincipal UserDetails principal,
         @Valid @RequestBody ExpenseDto.Request req
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         return ResponseEntity.status(201).body(Map.of(
             "success", true,
             "message", "Expense recorded",
-            "data", expenseService.create(userId, req)
+            "data",    expenseService.create(userId, req)
         ));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<?> update(
         @AuthenticationPrincipal UserDetails principal,
-        @PathVariable Long id,
+        @PathVariable UUID id,                                                // ← UUID
         @Valid @RequestBody ExpenseDto.Request req
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         return ResponseEntity.ok(Map.of(
             "success", true,
             "message", "Expense updated",
-            "data", expenseService.update(userId, id, req)
+            "data",    expenseService.update(userId, id, req)
         ));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(
         @AuthenticationPrincipal UserDetails principal,
-        @PathVariable Long id
+        @PathVariable UUID id                                                 // ← UUID
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         expenseService.delete(userId, id);
         return ResponseEntity.ok(Map.of("success", true, "message", "Expense deleted"));
     }
 
-    /**
-     * GET /api/expenses/summary?year=2026&month=3
-     * Returns totals in both USD and KHR derived from amountBase.
-     * The `currency` param is removed — summary is always currency-agnostic.
-     */
     @GetMapping("/summary")
     public ResponseEntity<?> summary(
         @AuthenticationPrincipal UserDetails principal,
         @RequestParam(required = false) Integer year,
         @RequestParam(required = false) Integer month
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         YearMonth ym = YearMonth.now();
         int y = year  != null ? year  : ym.getYear();
         int m = month != null ? month : ym.getMonthValue();

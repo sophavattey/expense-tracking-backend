@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 public class ExpenseDto {
 
@@ -25,7 +26,7 @@ public class ExpenseDto {
         private LocalDate date;
 
         @NotNull(message = "Category is required")
-        private Long categoryId;
+        private UUID categoryId;               // ← UUID
 
         @Size(max = 150, message = "Merchant name must be 150 characters or less")
         private String merchantName;
@@ -38,10 +39,9 @@ public class ExpenseDto {
 
     @Data
     public static class Response {
-        private Long                  id;
+        private UUID                  id;      // ← UUID
         private BigDecimal            amount;
         private Expense.Currency      currency;
-        /** USD-normalised amount — always present, ready for charts/totals */
         private BigDecimal            amountBase;
         private LocalDate             date;
         private CategoryDto.Response  category;
@@ -66,9 +66,7 @@ public class ExpenseDto {
     public static class MonthlySummary {
         private int        year;
         private int        month;
-        /** Total in USD (amountBase sum) */
         private BigDecimal totalSpentUsd;
-        /** Total in KHR (amountBase × 4000) */
         private BigDecimal totalSpentKhr;
         private List<CategoryBreakdown> breakdown;
     }
@@ -78,9 +76,7 @@ public class ExpenseDto {
         private String     categoryName;
         private String     categoryIcon;
         private String     categoryColor;
-        /** Category total in USD */
         private BigDecimal totalUsd;
-        /** Category total in KHR */
         private BigDecimal totalKhr;
         private int        percentage;
     }

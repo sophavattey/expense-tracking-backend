@@ -10,10 +10,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
-public interface BudgetRepository extends JpaRepository<Budget, Long> {
+public interface BudgetRepository extends JpaRepository<Budget, UUID> {       // ← UUID
 
-    /** All budgets for a user, ordered: overall first, then by period, then category name */
     @Query("""
         SELECT b FROM Budget b
         LEFT JOIN FETCH b.category
@@ -25,9 +25,8 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
         """)
     List<Budget> findAllByUserWithCategory(@Param("user") User user);
 
-    Optional<Budget> findByIdAndUser(Long id, User user);
+    Optional<Budget> findByIdAndUser(UUID id, User user);                     // ← UUID
 
-    /** Check duplicate: same user + category (null = overall) + period */
     @Query("""
         SELECT COUNT(b) > 0 FROM Budget b
         WHERE b.user = :user
@@ -39,11 +38,10 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
     boolean existsDuplicate(
         @Param("user")       User user,
         @Param("period")     Budget.Period period,
-        @Param("categoryId") Long categoryId,
-        @Param("excludeId")  Long excludeId
+        @Param("categoryId") UUID categoryId,                                 // ← UUID
+        @Param("excludeId")  UUID excludeId                                   // ← UUID
     );
 
-    /** Sum of amountBase (USD) for a specific category in a date range */
     @Query("""
         SELECT COALESCE(SUM(e.amountBase), 0) FROM Expense e
         WHERE e.user.id      = :userId
@@ -52,13 +50,12 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
           AND e.date         <  :endDate
         """)
     BigDecimal sumSpentForCategory(
-        @Param("userId")     Long userId,
-        @Param("categoryId") Long categoryId,
+        @Param("userId")     UUID userId,                                     // ← UUID
+        @Param("categoryId") UUID categoryId,                                 // ← UUID
         @Param("startDate")  LocalDate startDate,
         @Param("endDate")    LocalDate endDate
     );
 
-    /** Sum of amountBase (USD) across ALL categories in a date range (overall budget) */
     @Query("""
         SELECT COALESCE(SUM(e.amountBase), 0) FROM Expense e
         WHERE e.user.id  = :userId
@@ -66,7 +63,7 @@ public interface BudgetRepository extends JpaRepository<Budget, Long> {
           AND e.date     < :endDate
         """)
     BigDecimal sumSpentOverall(
-        @Param("userId")    Long userId,
+        @Param("userId")    UUID userId,                                      // ← UUID
         @Param("startDate") LocalDate startDate,
         @Param("endDate")   LocalDate endDate
     );

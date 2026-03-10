@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/categories")
@@ -21,7 +22,7 @@ public class CategoryController {
 
     @GetMapping
     public ResponseEntity<?> getAll(@AuthenticationPrincipal UserDetails principal) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         List<CategoryDto.Response> categories = categoryService.getAllForUser(userId);
         return ResponseEntity.ok(Map.of("success", true, "data", categories));
     }
@@ -31,36 +32,34 @@ public class CategoryController {
         @AuthenticationPrincipal UserDetails principal,
         @Valid @RequestBody CategoryDto.Request req
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
-        CategoryDto.Response created = categoryService.create(userId, req);
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         return ResponseEntity.status(201).body(Map.of(
             "success", true,
             "message", "Category created",
-            "data", created
+            "data",    categoryService.create(userId, req)
         ));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<?> update(
         @AuthenticationPrincipal UserDetails principal,
-        @PathVariable Long id,
+        @PathVariable UUID id,                                                // ← UUID
         @Valid @RequestBody CategoryDto.Request req
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
-        CategoryDto.Response updated = categoryService.update(userId, id, req);
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         return ResponseEntity.ok(Map.of(
             "success", true,
             "message", "Category updated",
-            "data", updated
+            "data",    categoryService.update(userId, id, req)
         ));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(
         @AuthenticationPrincipal UserDetails principal,
-        @PathVariable Long id
+        @PathVariable UUID id                                                 // ← UUID
     ) {
-        Long userId = Long.parseLong(principal.getUsername());
+        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
         categoryService.delete(userId, id);
         return ResponseEntity.ok(Map.of("success", true, "message", "Category deleted"));
     }

@@ -1,7 +1,6 @@
 package com.example.finset.service;
 
 import com.example.finset.dto.BudgetDto;
-import com.example.finset.dto.CategoryDto;
 import com.example.finset.entity.Budget;
 import com.example.finset.entity.Category;
 import com.example.finset.entity.User;
@@ -20,23 +19,22 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class BudgetService {
 
-    private static final BigDecimal KHR_RATE  = new BigDecimal("4000");
-    private static final int        NEAR_PCT  = 80;
+    private static final BigDecimal KHR_RATE = new BigDecimal("4000");
+    private static final int        NEAR_PCT = 80;
 
     private final BudgetRepository   budgetRepository;
     private final CategoryRepository categoryRepository;
     private final UserRepository     userRepository;
     private final CategoryService    categoryService;
 
-    // ── List all with live status ─────────────────────────────────
-
     @Transactional(readOnly = true)
-    public BudgetDto.Summary getStatus(Long userId) {
+    public BudgetDto.Summary getStatus(UUID userId) {                          // ← UUID
         User user = getUser(userId);
         List<Budget> budgets = budgetRepository.findAllByUserWithCategory(user);
 
@@ -64,10 +62,8 @@ public class BudgetService {
         return summary;
     }
 
-    // ── Create ────────────────────────────────────────────────────
-
     @Transactional
-    public BudgetDto.Response create(Long userId, BudgetDto.Request req) {
+    public BudgetDto.Response create(UUID userId, BudgetDto.Request req) {     // ← UUID
         User user = getUser(userId);
         Category category = resolveCategory(req.getCategoryId(), userId);
 
@@ -92,10 +88,8 @@ public class BudgetService {
         return toResponse(budgetRepository.save(budget), userId);
     }
 
-    // ── Update ────────────────────────────────────────────────────
-
     @Transactional
-    public BudgetDto.Response update(Long userId, Long budgetId, BudgetDto.Request req) {
+    public BudgetDto.Response update(UUID userId, UUID budgetId, BudgetDto.Request req) { // ← UUID
         User user = getUser(userId);
         Budget budget = budgetRepository.findByIdAndUser(budgetId, user)
             .orElseThrow(() -> new ResourceNotFoundException("Budget not found"));
@@ -120,23 +114,14 @@ public class BudgetService {
         return toResponse(budgetRepository.save(budget), userId);
     }
 
-    // ── Delete ────────────────────────────────────────────────────
-
     @Transactional
-    public void delete(Long userId, Long budgetId) {
+    public void delete(UUID userId, UUID budgetId) {                           // ← UUID
         User user = getUser(userId);
         Budget budget = budgetRepository.findByIdAndUser(budgetId, user)
             .orElseThrow(() -> new ResourceNotFoundException("Budget not found"));
         budgetRepository.delete(budget);
     }
 
-    // ── Period calculation ────────────────────────────────────────
-
-    /**
-     * Returns [startDate, endDate) for the current period.
-     * endDate is exclusive (use < in queries).
-     * For non-recurring budgets, uses the stored dates directly.
-     */
     public record PeriodRange(LocalDate start, LocalDate end, String label) {}
 
     public PeriodRange currentPeriod(Budget budget) {
@@ -152,41 +137,33 @@ public class BudgetService {
         LocalDate today = LocalDate.now();
         return switch (budget.getPeriod()) {
             case DAILY -> new PeriodRange(
-                today,
-                today.plusDays(1),
+                today, today.plusDays(1),
                 today.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
             );
             case WEEKLY -> {
                 LocalDate monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
                 LocalDate sunday = monday.plusDays(6);
                 yield new PeriodRange(
-                    monday,
-                    sunday.plusDays(1),
+                    monday, sunday.plusDays(1),
                     "Week of " + monday.format(DateTimeFormatter.ofPattern("MMM d"))
                 );
             }
             case MONTHLY -> {
                 LocalDate start = today.with(TemporalAdjusters.firstDayOfMonth());
                 LocalDate end   = today.with(TemporalAdjusters.firstDayOfNextMonth());
-                yield new PeriodRange(
-                    start,
-                    end,
-                    today.format(DateTimeFormatter.ofPattern("MMM yyyy"))
-                );
+                yield new PeriodRange(start, end,
+                    today.format(DateTimeFormatter.ofPattern("MMM yyyy")));
             }
         };
     }
 
-    // ── Mappers ───────────────────────────────────────────────────
-
-    private BudgetDto.Status toStatus(Budget b, Long userId) {
+    private BudgetDto.Status toStatus(Budget b, UUID userId) {                 // ← UUID
         PeriodRange range = currentPeriod(b);
 
         BigDecimal spent = b.getCategory() != null
             ? budgetRepository.sumSpentForCategory(
                 userId, b.getCategory().getId(), range.start(), range.end())
-            : budgetRepository.sumSpentOverall(
-                userId, range.start(), range.end());
+            : budgetRepository.sumSpentOverall(userId, range.start(), range.end());
 
         BigDecimal limit     = b.getLimitUsd();
         BigDecimal remaining = limit.subtract(spent);
@@ -196,8 +173,7 @@ public class BudgetService {
 
         int pct = limit.compareTo(BigDecimal.ZERO) == 0 ? 0
             : spent.multiply(BigDecimal.valueOf(100))
-                .divide(limit, 0, RoundingMode.HALF_UP)
-                .intValue();
+                .divide(limit, 0, RoundingMode.HALF_UP).intValue();
 
         BudgetDto.Status s = new BudgetDto.Status();
         s.setId(b.getId());
@@ -211,15 +187,15 @@ public class BudgetService {
         s.setSpentKhr(spentKhr);
         s.setRemainingUsd(remaining);
         s.setRemainingKhr(remKhr);
-        s.setPercentage(Math.min(pct, 999)); // cap display at 999%
+        s.setPercentage(Math.min(pct, 999));
         s.setOver(spent.compareTo(limit) > 0);
         s.setPeriodLabel(range.label());
         s.setPeriodStart(range.start());
-        s.setPeriodEnd(range.end().minusDays(1)); // convert back to inclusive for display
+        s.setPeriodEnd(range.end().minusDays(1));
         return s;
     }
 
-    private BudgetDto.Response toResponse(Budget b, Long userId) {
+    private BudgetDto.Response toResponse(Budget b, UUID userId) {             // ← UUID
         BudgetDto.Response r = new BudgetDto.Response();
         r.setId(b.getId());
         r.setCategory(b.getCategory() != null
@@ -233,14 +209,12 @@ public class BudgetService {
         return r;
     }
 
-    // ── Helpers ───────────────────────────────────────────────────
-
-    private User getUser(Long userId) {
+    private User getUser(UUID userId) {                                        // ← UUID
         return userRepository.findById(userId)
             .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
-    private Category resolveCategory(Long categoryId, Long userId) {
+    private Category resolveCategory(UUID categoryId, UUID userId) {           // ← UUID
         if (categoryId == null) return null;
         return categoryRepository.findByIdAndVisibleToUser(categoryId, userId)
             .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
@@ -248,12 +222,10 @@ public class BudgetService {
 
     private void validateDates(BudgetDto.Request req) {
         if (!req.isRecurring()) {
-            if (req.getStartDate() == null) {
+            if (req.getStartDate() == null)
                 throw new IllegalArgumentException("Start date is required for non-recurring budgets.");
-            }
-            if (req.getEndDate() != null && req.getEndDate().isBefore(req.getStartDate())) {
+            if (req.getEndDate() != null && req.getEndDate().isBefore(req.getStartDate()))
                 throw new IllegalArgumentException("End date must be after start date.");
-            }
         }
     }
 }

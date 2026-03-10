@@ -4,8 +4,10 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.UuidGenerator;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "categories",
@@ -14,8 +16,10 @@ import java.time.LocalDateTime;
 public class Category {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue
+    @UuidGenerator
+    @Column(updatable = false, nullable = false, columnDefinition = "uuid")
+    private UUID id;
 
     // null = system default (visible to all users), non-null = user custom
     @ManyToOne(fetch = FetchType.LAZY)
@@ -32,7 +36,7 @@ public class Category {
     private String color;  // hex e.g. "#2563eb"
 
     @Column(nullable = false)
-    private boolean isDefault = false;   // true = system default, cannot be deleted
+    private boolean isDefault = false;
 
     @CreationTimestamp
     private LocalDateTime createdAt;

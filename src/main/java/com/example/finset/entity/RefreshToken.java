@@ -2,7 +2,10 @@ package com.example.finset.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.UuidGenerator;
+
 import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "refresh_tokens")
@@ -10,8 +13,10 @@ import java.time.Instant;
 public class RefreshToken {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue
+    @UuidGenerator
+    @Column(updatable = false, nullable = false, columnDefinition = "uuid")
+    private UUID id;
 
     /** Hashed token stored in DB; raw value goes in the cookie */
     @Column(nullable = false, unique = true, length = 512)

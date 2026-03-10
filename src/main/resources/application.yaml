@@ -36,7 +36,7 @@ app:
     access-secret: ${JWT_ACCESS_SECRET}
     refresh-secret: ${JWT_REFRESH_SECRET}
     access-expiration-ms: 900000        # 15 minutes
-    refresh-expiration-ms: 2592000000   # 30 days
+    refresh-expiration-ms: 604800000   # 7 days
   cookie:
     secure: ${COOKIE_SECURE:false}      # set true in production (HTTPS)
     same-site: Lax

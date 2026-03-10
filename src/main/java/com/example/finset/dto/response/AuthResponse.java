@@ -4,13 +4,14 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.util.UUID;
+
 @Getter @Builder @AllArgsConstructor
 public class AuthResponse {
-    private Long   id;
+    private UUID   id;
     private String email;
     private String name;
     private String avatar;
     private String role;
     private String provider;
-    // Note: tokens are in HTTP-only cookies, NOT in this response body
 }

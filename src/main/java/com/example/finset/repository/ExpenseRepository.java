@@ -14,20 +14,18 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
-public interface ExpenseRepository extends JpaRepository<Expense, Long>,
+public interface ExpenseRepository extends JpaRepository<Expense, UUID>,      // ← UUID
         JpaSpecificationExecutor<Expense> {
 
     @EntityGraph(attributePaths = {"category"})
     Page<Expense> findAll(Specification<Expense> spec, Pageable pageable);
 
-    Optional<Expense> findByIdAndUserId(Long id, Long userId);
+    Optional<Expense> findByIdAndUserId(UUID id, UUID userId);                // ← UUID
 
-    long countByCategoryId(Long categoryId);
+    long countByCategoryId(UUID categoryId);                                  // ← UUID
 
-    // ── Summary queries — always use amountBase (USD-normalised) ──
-
-    /** Total spent in USD for a given month */
     @Query("""
         SELECT COALESCE(SUM(e.amountBase), 0) FROM Expense e
         WHERE e.user.id  = :userId
@@ -35,12 +33,11 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long>,
           AND e.date     < :endDate
         """)
     BigDecimal sumBaseByUserAndMonth(
-        @Param("userId")    Long userId,
+        @Param("userId")    UUID userId,                                      // ← UUID
         @Param("startDate") LocalDate startDate,
         @Param("endDate")   LocalDate endDate
     );
 
-    /** Per-category breakdown for a given month (USD base) */
     @Query("""
         SELECT c.name, c.icon, c.color, SUM(e.amountBase)
         FROM Expense e JOIN e.category c
@@ -51,7 +48,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long>,
         ORDER BY SUM(e.amountBase) DESC
         """)
     List<Object[]> sumByCategoryForMonth(
-        @Param("userId")    Long userId,
+        @Param("userId")    UUID userId,                                      // ← UUID
         @Param("startDate") LocalDate startDate,
         @Param("endDate")   LocalDate endDate
     );
