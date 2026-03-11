@@ -33,8 +33,10 @@ public class BudgetService {
     private final UserRepository     userRepository;
     private final CategoryService    categoryService;
 
+    /* ─── Read ──────────────────────────────────────────────────── */
+
     @Transactional(readOnly = true)
-    public BudgetDto.Summary getStatus(UUID userId) {                          // ← UUID
+    public BudgetDto.Summary getStatus(UUID userId) {
         User user = getUser(userId);
         List<Budget> budgets = budgetRepository.findAllByUserWithCategory(user);
 
@@ -62,9 +64,15 @@ public class BudgetService {
         return summary;
     }
 
+    /* ─── Create ────────────────────────────────────────────────── */
+
     @Transactional
-    public BudgetDto.Response create(UUID userId, BudgetDto.Request req) {     // ← UUID
+    public BudgetDto.Response create(UUID userId, BudgetDto.Request req) {
         User user = getUser(userId);
+
+        if (req.getCategoryId() == null)
+            throw new IllegalArgumentException("A category is required for budgets.");
+
         Category category = resolveCategory(req.getCategoryId(), userId);
 
         if (budgetRepository.existsDuplicate(user, req.getPeriod(), req.getCategoryId(), null)) {
@@ -73,26 +81,26 @@ public class BudgetService {
                 label + " already has a " + req.getPeriod().name().toLowerCase() + " budget.");
         }
 
-        validateDates(req);
-
         Budget budget = Budget.builder()
             .user(user)
             .category(category)
             .period(req.getPeriod())
-            .limitUsd(req.getLimitUsd())
-            .recurring(req.isRecurring())
-            .startDate(req.getStartDate())
-            .endDate(req.getEndDate())
+            .limitUsd(resolveLimit(req))
             .build();
 
         return toResponse(budgetRepository.save(budget), userId);
     }
 
+    /* ─── Update ────────────────────────────────────────────────── */
+
     @Transactional
-    public BudgetDto.Response update(UUID userId, UUID budgetId, BudgetDto.Request req) { // ← UUID
+    public BudgetDto.Response update(UUID userId, UUID budgetId, BudgetDto.Request req) {
         User user = getUser(userId);
         Budget budget = budgetRepository.findByIdAndUser(budgetId, user)
             .orElseThrow(() -> new ResourceNotFoundException("Budget not found"));
+
+        if (req.getCategoryId() == null)
+            throw new IllegalArgumentException("A category is required for budgets.");
 
         Category category = resolveCategory(req.getCategoryId(), userId);
 
@@ -102,62 +110,82 @@ public class BudgetService {
                 label + " already has a " + req.getPeriod().name().toLowerCase() + " budget.");
         }
 
-        validateDates(req);
-
         budget.setCategory(category);
         budget.setPeriod(req.getPeriod());
-        budget.setLimitUsd(req.getLimitUsd());
-        budget.setRecurring(req.isRecurring());
-        budget.setStartDate(req.getStartDate());
-        budget.setEndDate(req.getEndDate());
+        budget.setLimitUsd(resolveLimit(req));
 
         return toResponse(budgetRepository.save(budget), userId);
     }
 
+    /* ─── Delete ────────────────────────────────────────────────── */
+
     @Transactional
-    public void delete(UUID userId, UUID budgetId) {                           // ← UUID
+    public void delete(UUID userId, UUID budgetId) {
         User user = getUser(userId);
         Budget budget = budgetRepository.findByIdAndUser(budgetId, user)
             .orElseThrow(() -> new ResourceNotFoundException("Budget not found"));
         budgetRepository.delete(budget);
     }
 
+    /* ─── Period window ─────────────────────────────────────────── */
+
     public record PeriodRange(LocalDate start, LocalDate end, String label) {}
 
     public PeriodRange currentPeriod(Budget budget) {
-        if (!budget.isRecurring() && budget.getStartDate() != null) {
-            LocalDate end = budget.getEndDate() != null
-                ? budget.getEndDate().plusDays(1)
-                : LocalDate.now().plusDays(1);
-            String label = budget.getStartDate() + " → " +
-                (budget.getEndDate() != null ? budget.getEndDate() : "ongoing");
-            return new PeriodRange(budget.getStartDate(), end, label);
-        }
-
         LocalDate today = LocalDate.now();
         return switch (budget.getPeriod()) {
             case DAILY -> new PeriodRange(
-                today, today.plusDays(1),
+                today,
+                today.plusDays(1),
                 today.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
             );
             case WEEKLY -> {
                 LocalDate monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
                 LocalDate sunday = monday.plusDays(6);
                 yield new PeriodRange(
-                    monday, sunday.plusDays(1),
+                    monday,
+                    sunday.plusDays(1),
                     "Week of " + monday.format(DateTimeFormatter.ofPattern("MMM d"))
                 );
             }
             case MONTHLY -> {
                 LocalDate start = today.with(TemporalAdjusters.firstDayOfMonth());
                 LocalDate end   = today.with(TemporalAdjusters.firstDayOfNextMonth());
-                yield new PeriodRange(start, end,
-                    today.format(DateTimeFormatter.ofPattern("MMM yyyy")));
+                yield new PeriodRange(
+                    start, end,
+                    today.format(DateTimeFormatter.ofPattern("MMM yyyy"))
+                );
             }
         };
     }
 
-    private BudgetDto.Status toStatus(Budget b, UUID userId) {                 // ← UUID
+    /* ─── Helpers ───────────────────────────────────────────────── */
+
+    /**
+     * Resolves the limit to USD regardless of input currency.
+     *
+     *   inputCurrency = "KHR" → limitUsd = limitKhr / 4000 (rounded to 4 decimal places)
+     *   inputCurrency = "USD" → limitUsd used directly
+     */
+    private BigDecimal resolveLimit(BudgetDto.Request req) {
+        boolean isKhr = "KHR".equalsIgnoreCase(req.getInputCurrency());
+
+        if (isKhr) {
+            if (req.getLimitKhr() == null || req.getLimitKhr().compareTo(BigDecimal.ONE) < 0)
+                throw new IllegalArgumentException("KHR limit must be at least ៛1.");
+            return req.getLimitKhr()
+                .divide(KHR_RATE, 4, RoundingMode.HALF_UP);
+        }
+
+        // USD (default)
+        if (req.getLimitUsd() == null || req.getLimitUsd().compareTo(new BigDecimal("0.01")) < 0)
+            throw new IllegalArgumentException("USD limit must be at least $0.01.");
+        return req.getLimitUsd();
+    }
+
+    /* ─── Internal mappers ──────────────────────────────────────── */
+
+    private BudgetDto.Status toStatus(Budget b, UUID userId) {
         PeriodRange range = currentPeriod(b);
 
         BigDecimal spent = b.getCategory() != null
@@ -195,7 +223,7 @@ public class BudgetService {
         return s;
     }
 
-    private BudgetDto.Response toResponse(Budget b, UUID userId) {             // ← UUID
+    private BudgetDto.Response toResponse(Budget b, UUID userId) {
         BudgetDto.Response r = new BudgetDto.Response();
         r.setId(b.getId());
         r.setCategory(b.getCategory() != null
@@ -203,29 +231,18 @@ public class BudgetService {
             : null);
         r.setPeriod(b.getPeriod());
         r.setLimitUsd(b.getLimitUsd());
-        r.setRecurring(b.isRecurring());
-        r.setStartDate(b.getStartDate());
-        r.setEndDate(b.getEndDate());
+        r.setLimitKhr(b.getLimitUsd().multiply(KHR_RATE).setScale(0, RoundingMode.HALF_UP));
         return r;
     }
 
-    private User getUser(UUID userId) {                                        // ← UUID
+    private User getUser(UUID userId) {
         return userRepository.findById(userId)
             .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
-    private Category resolveCategory(UUID categoryId, UUID userId) {           // ← UUID
+    private Category resolveCategory(UUID categoryId, UUID userId) {
         if (categoryId == null) return null;
         return categoryRepository.findByIdAndVisibleToUser(categoryId, userId)
             .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
-    }
-
-    private void validateDates(BudgetDto.Request req) {
-        if (!req.isRecurring()) {
-            if (req.getStartDate() == null)
-                throw new IllegalArgumentException("Start date is required for non-recurring budgets.");
-            if (req.getEndDate() != null && req.getEndDate().isBefore(req.getStartDate()))
-                throw new IllegalArgumentException("End date must be after start date.");
-        }
     }
 }

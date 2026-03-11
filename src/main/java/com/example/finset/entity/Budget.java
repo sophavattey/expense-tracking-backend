@@ -7,7 +7,6 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.annotations.UuidGenerator;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -32,8 +31,8 @@ public class Budget {
     private User user;
 
     /**
-     * null  → overall budget (all categories combined)
-     * set   → per-category budget
+     * null → overall budget (all categories combined)
+     * set  → per-category budget
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id")
@@ -43,25 +42,12 @@ public class Budget {
     @Column(nullable = false, length = 10)
     private Period period;
 
-    /** Spending limit in USD */
+    /**
+     * Spending limit in USD.
+     * Automatically resets every period — no manual renewal needed.
+     */
     @Column(nullable = false, precision = 15, scale = 2)
     private BigDecimal limitUsd;
-
-    /**
-     * true  → auto-resets every period (rolling)
-     * false → one-shot budget between startDate / endDate
-     */
-    @Column(nullable = false)
-    @Builder.Default
-    private boolean recurring = true;
-
-    /** Only used when recurring = false */
-    @Column
-    private LocalDate startDate;
-
-    /** Only used when recurring = false */
-    @Column
-    private LocalDate endDate;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
