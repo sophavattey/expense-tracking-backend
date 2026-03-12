@@ -19,9 +19,13 @@ public class BudgetController {
 
     private final BudgetService budgetService;
 
+    /* ─── Personal ───────────────────────────────────────────────── */
+
     @GetMapping("/status")
-    public ResponseEntity<?> getStatus(@AuthenticationPrincipal UserDetails principal) {
-        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
+    public ResponseEntity<?> getStatus(
+        @AuthenticationPrincipal UserDetails principal
+    ) {
+        UUID userId = UUID.fromString(principal.getUsername());
         return ResponseEntity.ok(Map.of("success", true,
             "data", budgetService.getStatus(userId)));
     }
@@ -31,7 +35,7 @@ public class BudgetController {
         @AuthenticationPrincipal UserDetails principal,
         @Valid @RequestBody BudgetDto.Request req
     ) {
-        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
+        UUID userId = UUID.fromString(principal.getUsername());
         return ResponseEntity.status(201).body(Map.of(
             "success", true,
             "message", "Budget created",
@@ -42,10 +46,10 @@ public class BudgetController {
     @PutMapping("/{id}")
     public ResponseEntity<?> update(
         @AuthenticationPrincipal UserDetails principal,
-        @PathVariable UUID id,                                                // ← UUID
+        @PathVariable UUID id,
         @Valid @RequestBody BudgetDto.Request req
     ) {
-        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
+        UUID userId = UUID.fromString(principal.getUsername());
         return ResponseEntity.ok(Map.of(
             "success", true,
             "message", "Budget updated",
@@ -56,10 +60,36 @@ public class BudgetController {
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(
         @AuthenticationPrincipal UserDetails principal,
-        @PathVariable UUID id                                                 // ← UUID
+        @PathVariable UUID id
     ) {
-        UUID userId = UUID.fromString(principal.getUsername());               // ← UUID
+        UUID userId = UUID.fromString(principal.getUsername());
         budgetService.delete(userId, id);
         return ResponseEntity.ok(Map.of("success", true, "message", "Budget deleted"));
+    }
+
+    /* ─── Group (scoped under /api/groups/{groupId}/budgets) ─────── */
+
+    @GetMapping("/group/{groupId}/status")
+    public ResponseEntity<?> getGroupStatus(
+        @AuthenticationPrincipal UserDetails principal,
+        @PathVariable UUID groupId
+    ) {
+        UUID userId = UUID.fromString(principal.getUsername());
+        return ResponseEntity.ok(Map.of("success", true,
+            "data", budgetService.getGroupStatus(userId, groupId)));
+    }
+
+    @PostMapping("/group/{groupId}")
+    public ResponseEntity<?> createForGroup(
+        @AuthenticationPrincipal UserDetails principal,
+        @PathVariable UUID groupId,
+        @Valid @RequestBody BudgetDto.Request req
+    ) {
+        UUID userId = UUID.fromString(principal.getUsername());
+        return ResponseEntity.status(201).body(Map.of(
+            "success", true,
+            "message", "Group budget created",
+            "data",    budgetService.createForGroup(userId, groupId, req)
+        ));
     }
 }

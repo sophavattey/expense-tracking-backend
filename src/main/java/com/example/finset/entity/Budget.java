@@ -30,22 +30,22 @@ public class Budget {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    /**
-     * null → overall budget (all categories combined)
-     * set  → per-category budget
-     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id")
     private Category category;
+
+    /**
+     * null  → personal budget (owned by this user only)
+     * set   → shared group budget (tracks spending of all group members)
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "group_id")
+    private Group group;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
     private Period period;
 
-    /**
-     * Spending limit in USD.
-     * Automatically resets every period — no manual renewal needed.
-     */
     @Column(nullable = false, precision = 15, scale = 2)
     private BigDecimal limitUsd;
 

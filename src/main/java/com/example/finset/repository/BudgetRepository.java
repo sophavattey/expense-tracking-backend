@@ -1,6 +1,7 @@
 package com.example.finset.repository;
 
 import com.example.finset.entity.Budget;
+import com.example.finset.entity.Group;
 import com.example.finset.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -12,46 +13,72 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface BudgetRepository extends JpaRepository<Budget, UUID> {       // ← UUID
+public interface BudgetRepository extends JpaRepository<Budget, UUID> {
+
+    /* ─── Fetch ──────────────────────────────────────────────────── */
 
     @Query("""
         SELECT b FROM Budget b
         LEFT JOIN FETCH b.category
         WHERE b.user = :user
-        ORDER BY
-            CASE WHEN b.category IS NULL THEN 0 ELSE 1 END,
-            b.period,
-            b.category.name
+          AND b.group IS NULL
+        ORDER BY b.period, b.category.name
         """)
     List<Budget> findAllByUserWithCategory(@Param("user") User user);
 
-    Optional<Budget> findByIdAndUser(UUID id, User user);                     // ← UUID
+    @Query("""
+        SELECT b FROM Budget b
+        LEFT JOIN FETCH b.category
+        WHERE b.group = :group
+        ORDER BY b.period, b.category.name
+        """)
+    List<Budget> findAllByGroup(@Param("group") Group group);
+
+    Optional<Budget> findByIdAndUser(UUID id, User user);
+
+    /* ─── Duplicate check ────────────────────────────────────────── */
 
     @Query("""
         SELECT COUNT(b) > 0 FROM Budget b
         WHERE b.user = :user
+          AND b.group IS NULL
           AND b.period = :period
-          AND ((:categoryId IS NULL AND b.category IS NULL)
-               OR (b.category.id = :categoryId))
+          AND b.category.id = :categoryId
           AND (:excludeId IS NULL OR b.id <> :excludeId)
         """)
     boolean existsDuplicate(
         @Param("user")       User user,
         @Param("period")     Budget.Period period,
-        @Param("categoryId") UUID categoryId,                                 // ← UUID
-        @Param("excludeId")  UUID excludeId                                   // ← UUID
+        @Param("categoryId") UUID categoryId,
+        @Param("excludeId")  UUID excludeId
     );
 
     @Query("""
+        SELECT COUNT(b) > 0 FROM Budget b
+        WHERE b.group = :group
+          AND b.period = :period
+          AND b.category.id = :categoryId
+          AND (:excludeId IS NULL OR b.id <> :excludeId)
+        """)
+    boolean existsDuplicateInGroup(
+        @Param("group")      Group group,
+        @Param("period")     Budget.Period period,
+        @Param("categoryId") UUID categoryId,
+        @Param("excludeId")  UUID excludeId
+    );
+
+    /* ─── Spend queries — PERSONAL (single userId) ───────────────── */
+
+    @Query("""
         SELECT COALESCE(SUM(e.amountBase), 0) FROM Expense e
-        WHERE e.user.id      = :userId
-          AND e.category.id  = :categoryId
-          AND e.date         >= :startDate
-          AND e.date         <  :endDate
+        WHERE e.user.id     = :userId
+          AND e.category.id = :categoryId
+          AND e.date        >= :startDate
+          AND e.date        <  :endDate
         """)
     BigDecimal sumSpentForCategory(
-        @Param("userId")     UUID userId,                                     // ← UUID
-        @Param("categoryId") UUID categoryId,                                 // ← UUID
+        @Param("userId")     UUID userId,
+        @Param("categoryId") UUID categoryId,
         @Param("startDate")  LocalDate startDate,
         @Param("endDate")    LocalDate endDate
     );
@@ -63,7 +90,35 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {       //
           AND e.date     < :endDate
         """)
     BigDecimal sumSpentOverall(
-        @Param("userId")    UUID userId,                                      // ← UUID
+        @Param("userId")    UUID userId,
+        @Param("startDate") LocalDate startDate,
+        @Param("endDate")   LocalDate endDate
+    );
+
+    /* ─── Spend queries — GROUP (all member userIds) ─────────────── */
+
+    @Query("""
+        SELECT COALESCE(SUM(e.amountBase), 0) FROM Expense e
+        WHERE e.user.id      IN :userIds
+          AND e.category.id  = :categoryId
+          AND e.date         >= :startDate
+          AND e.date         <  :endDate
+        """)
+    BigDecimal sumSpentForCategoryByGroup(
+        @Param("userIds")    List<UUID> userIds,
+        @Param("categoryId") UUID categoryId,
+        @Param("startDate")  LocalDate startDate,
+        @Param("endDate")    LocalDate endDate
+    );
+
+    @Query("""
+        SELECT COALESCE(SUM(e.amountBase), 0) FROM Expense e
+        WHERE e.user.id  IN :userIds
+          AND e.date    >= :startDate
+          AND e.date     < :endDate
+        """)
+    BigDecimal sumSpentOverallByGroup(
+        @Param("userIds")   List<UUID> userIds,
         @Param("startDate") LocalDate startDate,
         @Param("endDate")   LocalDate endDate
     );
