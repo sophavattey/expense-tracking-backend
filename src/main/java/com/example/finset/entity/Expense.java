@@ -30,20 +30,25 @@ public class Expense {
     @JoinColumn(name = "category_id", nullable = false)
     private Category category;
 
-    /** Original amount the user entered */
+    /**
+     * null  → personal expense (only visible to the owner)
+     * set   → group expense (visible to all group members)
+     *
+     * Personal and group expenses are fully isolated:
+     * - POST /api/expenses           → group = null
+     * - POST /api/expenses/group/{id} → group = that group
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "group_id")
+    private Group group;
+
     @Column(nullable = false, precision = 15, scale = 2)
     private BigDecimal amount;
 
-    /** Original currency (USD or KHR) */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 3)
     private Currency currency = Currency.USD;
 
-    /**
-     * Amount normalised to USD for totals, budgets, and charts.
-     * USD expenses → same as amount
-     * KHR expenses → amount / 4000 (fixed Cambodian rate)
-     */
     @Column(nullable = false, precision = 15, scale = 2)
     private BigDecimal amountBase;
 

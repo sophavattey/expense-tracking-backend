@@ -33,7 +33,16 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ex.getMessage());
     }
 
-    // ── Expense / Category exceptions ─────────────────────────────
+    // ── Authorisation — group owner-only actions ──────────────────
+
+    // 403 — e.g. a group member trying to create/edit/delete a group budget
+    @ExceptionHandler(SecurityException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handleForbidden(SecurityException ex) {
+        return ApiResponse.error(ex.getMessage());
+    }
+
+    // ── Expense / Category / Group exceptions ─────────────────────
 
     @ExceptionHandler(ResourceNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
@@ -47,7 +56,7 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ex.getMessage());
     }
 
-    // 409 — e.g. deleting a category that still has expenses
+    // 409 — e.g. duplicate budget, deleting a category that still has expenses
     @ExceptionHandler(IllegalStateException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiResponse<Void> handleIllegalState(IllegalStateException ex) {

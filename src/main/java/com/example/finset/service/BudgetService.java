@@ -4,7 +4,6 @@ import com.example.finset.dto.BudgetDto;
 import com.example.finset.entity.Budget;
 import com.example.finset.entity.Category;
 import com.example.finset.entity.Group;
-import com.example.finset.entity.GroupMember;
 import com.example.finset.entity.User;
 import com.example.finset.exception.ResourceNotFoundException;
 import com.example.finset.repository.BudgetRepository;
@@ -98,7 +97,7 @@ public class BudgetService {
         }
 
         Budget budget = Budget.builder()
-            .user(user)       // creator — used for audit only
+            .user(user)
             .group(group)
             .category(category)
             .period(req.getPeriod())
@@ -116,7 +115,6 @@ public class BudgetService {
         Budget budget = budgetRepository.findByIdAndUser(budgetId, user)
             .orElseThrow(() -> new ResourceNotFoundException("Budget not found"));
 
-        // If this is a group budget, only the owner may edit it
         if (budget.getGroup() != null)
             getGroupAndVerifyOwner(budget.getGroup().getId(), userId);
 
@@ -187,13 +185,6 @@ public class BudgetService {
 
     /* ─── Shared summary builder ────────────────────────────────── */
 
-    /**
-     * Builds a BudgetDto.Summary from a list of budgets and the userIds
-     * whose expenses should be counted.
-     *
-     * Personal:  userIds = [ownerId]
-     * Group:     userIds = all group member ids
-     */
     private BudgetDto.Summary buildSummary(List<Budget> budgets, List<UUID> userIds) {
         List<BudgetDto.Status> statuses = budgets.stream()
             .map(b -> toStatus(b, userIds))
@@ -219,20 +210,18 @@ public class BudgetService {
         return summary;
     }
 
-    /* ─── toStatus — works for both personal and group ──────────── */
+    /* ─── toStatus ──────────────────────────────────────────────── */
 
     private BudgetDto.Status toStatus(Budget b, List<UUID> userIds) {
         PeriodRange range = currentPeriod(b);
 
         BigDecimal spent;
         if (userIds.size() == 1) {
-            // Personal path — original single-user queries
             UUID uid = userIds.get(0);
             spent = b.getCategory() != null
                 ? budgetRepository.sumSpentForCategory(uid, b.getCategory().getId(), range.start(), range.end())
                 : budgetRepository.sumSpentOverall(uid, range.start(), range.end());
         } else {
-            // Group path — aggregate across all member ids
             spent = b.getCategory() != null
                 ? budgetRepository.sumSpentForCategoryByGroup(userIds, b.getCategory().getId(), range.start(), range.end())
                 : budgetRepository.sumSpentOverallByGroup(userIds, range.start(), range.end());
@@ -248,7 +237,6 @@ public class BudgetService {
             : spent.multiply(BigDecimal.valueOf(100))
                 .divide(limit, 0, RoundingMode.HALF_UP).intValue();
 
-        // Which userId to use for category display (owner / first member)
         UUID displayUserId = userIds.get(0);
 
         BudgetDto.Status s = new BudgetDto.Status();
@@ -306,8 +294,12 @@ public class BudgetService {
             .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
     }
 
+    /**
+     * Uses findByIdWithMembers so group.getMembers() is always populated —
+     * avoids LazyInitializationException when iterating members outside a session.
+     */
     private Group getGroupAndVerifyMember(UUID groupId, UUID userId) {
-        Group group = groupRepository.findById(groupId)
+        Group group = groupRepository.findByIdWithMembers(groupId)
             .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
         boolean isMember = group.getMembers().stream()
             .anyMatch(m -> m.getUser().getId().equals(userId));
@@ -315,8 +307,12 @@ public class BudgetService {
         return group;
     }
 
+    /**
+     * Uses findByIdWithMembers for consistency — owner check only needs owner,
+     * but members are already loaded and free to use afterward.
+     */
     private Group getGroupAndVerifyOwner(UUID groupId, UUID userId) {
-        Group group = groupRepository.findById(groupId)
+        Group group = groupRepository.findByIdWithMembers(groupId)
             .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
         if (!group.getOwner().getId().equals(userId))
             throw new SecurityException("Only the group owner can manage budgets.");

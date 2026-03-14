@@ -11,12 +11,11 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "budgets",
-    uniqueConstraints = @UniqueConstraint(
-        columnNames = {"user_id", "category_id", "period"},
-        name = "uk_budget_user_category_period"
-    )
-)
+@Table(name = "budgets")
+// NOTE: Uniqueness is enforced by two partial DB indexes (not a JPA constraint)
+// so that personal and group budgets can share the same category+period:
+//   uk_budget_personal_category_period: (user_id, category_id, period) WHERE group_id IS NULL
+//   uk_budget_group_category_period:    (group_id, category_id, period) WHERE group_id IS NOT NULL
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Budget {
 

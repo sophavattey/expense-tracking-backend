@@ -38,4 +38,17 @@ public interface GroupRepository extends JpaRepository<Group, UUID> {
         WHERE m.group.id = :groupId AND m.user = :user
         """)
     boolean isMember(@Param("groupId") UUID groupId, @Param("user") User user);
+
+    /**
+     * Load a group by id WITH all members eagerly fetched.
+     * Use this instead of findById() whenever you need to call
+     * group.getMembers() — avoids LazyInitializationException.
+     */
+    @Query("""
+        SELECT g FROM Group g
+        JOIN FETCH g.members m
+        JOIN FETCH m.user
+        WHERE g.id = :id
+        """)
+    Optional<Group> findByIdWithMembers(@Param("id") UUID id);
 }

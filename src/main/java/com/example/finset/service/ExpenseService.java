@@ -3,11 +3,13 @@ package com.example.finset.service;
 import com.example.finset.dto.ExpenseDto;
 import com.example.finset.entity.Category;
 import com.example.finset.entity.Expense;
+import com.example.finset.entity.Group;
 import com.example.finset.entity.User;
 import com.example.finset.exception.ResourceNotFoundException;
 import com.example.finset.repository.CategoryRepository;
 import com.example.finset.repository.ExpenseRepository;
 import com.example.finset.repository.ExpenseSpec;
+import com.example.finset.repository.GroupRepository;
 import com.example.finset.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -32,6 +34,7 @@ public class ExpenseService {
     private final ExpenseRepository  expenseRepository;
     private final CategoryRepository categoryRepository;
     private final UserRepository     userRepository;
+    private final GroupRepository    groupRepository;
     private final CategoryService    categoryService;
 
     private BigDecimal toUsdBase(BigDecimal amount, Expense.Currency currency) {
@@ -39,8 +42,10 @@ public class ExpenseService {
         return amount.divide(KHR_RATE, 2, RoundingMode.HALF_UP);
     }
 
+    /* ─── Personal ───────────────────────────────────────────────── */
+
     public ExpenseDto.PageResponse getExpenses(
-        UUID userId, UUID categoryId,                                          // ← UUID
+        UUID userId, UUID categoryId,
         LocalDate from, LocalDate to,
         Expense.Currency currency,
         int page, int size
@@ -50,25 +55,17 @@ public class ExpenseService {
             ExpenseSpec.filter(userId, categoryId, from, to, currency),
             pageable
         );
-
-        ExpenseDto.PageResponse resp = new ExpenseDto.PageResponse();
-        resp.setContent(result.getContent().stream().map(this::toResponse).toList());
-        resp.setPage(result.getNumber());
-        resp.setSize(result.getSize());
-        resp.setTotalElements(result.getTotalElements());
-        resp.setTotalPages(result.getTotalPages());
-        resp.setLast(result.isLast());
-        return resp;
+        return toPageResponse(result);
     }
 
-    public ExpenseDto.Response getById(UUID userId, UUID expenseId) {          // ← UUID
+    public ExpenseDto.Response getById(UUID userId, UUID expenseId) {
         Expense expense = expenseRepository.findByIdAndUserId(expenseId, userId)
             .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
         return toResponse(expense);
     }
 
     @Transactional
-    public ExpenseDto.Response create(UUID userId, ExpenseDto.Request req) {   // ← UUID
+    public ExpenseDto.Response create(UUID userId, ExpenseDto.Request req) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
@@ -79,6 +76,40 @@ public class ExpenseService {
         Expense expense = Expense.builder()
             .user(user)
             .category(category)
+            .group(null)                          // ← explicitly personal
+            .amount(req.getAmount())
+            .currency(req.getCurrency())
+            .amountBase(toUsdBase(req.getAmount(), req.getCurrency()))
+            .date(req.getDate())
+            .merchantName(req.getMerchantName())
+            .note(req.getNote())
+            .paymentMethod(req.getPaymentMethod() != null
+                ? req.getPaymentMethod()
+                : Expense.PaymentMethod.CASH)
+            .build();
+
+        return toResponse(expenseRepository.save(expense));
+    }
+
+    /**
+     * Creates an expense scoped to a group.
+     * group_id is set on the row — it will NOT appear in personal expense queries.
+     */
+    @Transactional
+    public ExpenseDto.Response createForGroup(UUID userId, UUID groupId, ExpenseDto.Request req) {
+        Group group = getGroupAndVerifyMember(groupId, userId);
+
+        User user = userRepository.findById(userId)
+            .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Category category = categoryRepository
+            .findByIdAndVisibleToUser(req.getCategoryId(), userId)
+            .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+
+        Expense expense = Expense.builder()
+            .user(user)
+            .category(category)
+            .group(group)                         // ← scoped to this group
             .amount(req.getAmount())
             .currency(req.getCurrency())
             .amountBase(toUsdBase(req.getAmount(), req.getCurrency()))
@@ -94,7 +125,7 @@ public class ExpenseService {
     }
 
     @Transactional
-    public ExpenseDto.Response update(UUID userId, UUID expenseId, ExpenseDto.Request req) { // ← UUID
+    public ExpenseDto.Response update(UUID userId, UUID expenseId, ExpenseDto.Request req) {
         Expense expense = expenseRepository.findByIdAndUserId(expenseId, userId)
             .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
 
@@ -117,23 +148,76 @@ public class ExpenseService {
     }
 
     @Transactional
-    public void delete(UUID userId, UUID expenseId) {                          // ← UUID
+    public void delete(UUID userId, UUID expenseId) {
         Expense expense = expenseRepository.findByIdAndUserId(expenseId, userId)
             .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
         expenseRepository.delete(expense);
     }
 
-    public ExpenseDto.MonthlySummary getMonthlySummary(UUID userId, int year, int month) { // ← UUID
+    public ExpenseDto.MonthlySummary getMonthlySummary(UUID userId, int year, int month) {
         YearMonth ym        = YearMonth.of(year, month);
         LocalDate startDate = ym.atDay(1);
         LocalDate endDate   = ym.plusMonths(1).atDay(1);
 
         BigDecimal totalUsd = expenseRepository
             .sumBaseByUserAndMonth(userId, startDate, endDate);
-        BigDecimal totalKhr = totalUsd.multiply(KHR_RATE).setScale(0, RoundingMode.HALF_UP);
 
         List<Object[]> rows = expenseRepository
             .sumByCategoryForMonth(userId, startDate, endDate);
+
+        return buildMonthlySummary(year, month, totalUsd, rows);
+    }
+
+    /* ─── Group ──────────────────────────────────────────────────── */
+
+    /**
+     * Returns paginated expenses scoped to the group (group_id = groupId).
+     * Personal expenses of the same members are NOT included.
+     */
+    public ExpenseDto.PageResponse getGroupExpenses(
+        UUID requesterId, UUID groupId,
+        UUID categoryId,
+        LocalDate from, LocalDate to,
+        Expense.Currency currency,
+        int page, int size
+    ) {
+        getGroupAndVerifyMember(groupId, requesterId);
+
+        Pageable pageable = PageRequest.of(page, Math.min(size, 200));
+        Page<Expense> result = expenseRepository.findAll(
+            ExpenseSpec.filterByGroupId(groupId, categoryId, from, to, currency),
+            pageable
+        );
+        return toPageResponse(result);
+    }
+
+    /**
+     * Returns monthly summary scoped to the group (group_id = groupId).
+     */
+    public ExpenseDto.MonthlySummary getGroupMonthlySummary(
+        UUID requesterId, UUID groupId, int year, int month
+    ) {
+        getGroupAndVerifyMember(groupId, requesterId);
+
+        YearMonth ym        = YearMonth.of(year, month);
+        LocalDate startDate = ym.atDay(1);
+        LocalDate endDate   = ym.plusMonths(1).atDay(1);
+
+        BigDecimal totalUsd = expenseRepository
+            .sumBaseByGroupAndMonth(groupId, startDate, endDate);
+
+        List<Object[]> rows = expenseRepository
+            .sumByCategoryForGroupAndMonth(groupId, startDate, endDate);
+
+        return buildMonthlySummary(year, month, totalUsd, rows);
+    }
+
+    /* ─── Shared helpers ─────────────────────────────────────────── */
+
+    private ExpenseDto.MonthlySummary buildMonthlySummary(
+        int year, int month, BigDecimal totalUsd, List<Object[]> rows
+    ) {
+        BigDecimal totalKhr = totalUsd.multiply(KHR_RATE).setScale(0, RoundingMode.HALF_UP);
 
         List<ExpenseDto.CategoryBreakdown> breakdown = rows.stream().map(row -> {
             ExpenseDto.CategoryBreakdown b = new ExpenseDto.CategoryBreakdown();
@@ -158,9 +242,21 @@ public class ExpenseService {
         return summary;
     }
 
+    private ExpenseDto.PageResponse toPageResponse(Page<Expense> result) {
+        ExpenseDto.PageResponse resp = new ExpenseDto.PageResponse();
+        resp.setContent(result.getContent().stream().map(this::toResponse).toList());
+        resp.setPage(result.getNumber());
+        resp.setSize(result.getSize());
+        resp.setTotalElements(result.getTotalElements());
+        resp.setTotalPages(result.getTotalPages());
+        resp.setLast(result.isLast());
+        return resp;
+    }
+
     private ExpenseDto.Response toResponse(Expense e) {
         ExpenseDto.Response r = new ExpenseDto.Response();
         r.setId(e.getId());
+        r.setUserId(e.getUser() != null ? e.getUser().getId() : null);
         r.setAmount(e.getAmount());
         r.setCurrency(e.getCurrency());
         r.setAmountBase(e.getAmountBase());
@@ -170,8 +266,19 @@ public class ExpenseService {
         r.setPaymentMethod(e.getPaymentMethod());
         r.setCreatedAt(e.getCreatedAt());
         r.setUpdatedAt(e.getUpdatedAt());
-        UUID userId = e.getUser() != null ? e.getUser().getId() : null;       // ← UUID
+        UUID userId = e.getUser() != null ? e.getUser().getId() : null;
         r.setCategory(categoryService.toResponse(e.getCategory(), userId));
         return r;
+    }
+
+    /* ─── Group access helpers ───────────────────────────────────── */
+
+    private Group getGroupAndVerifyMember(UUID groupId, UUID userId) {
+        Group group = groupRepository.findByIdWithMembers(groupId)
+            .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
+        boolean isMember = group.getMembers().stream()
+            .anyMatch(m -> m.getUser().getId().equals(userId));
+        if (!isMember) throw new SecurityException("You are not a member of this group.");
+        return group;
     }
 }

@@ -26,7 +26,7 @@ public class ExpenseDto {
         private LocalDate date;
 
         @NotNull(message = "Category is required")
-        private UUID categoryId;               // ← UUID
+        private UUID categoryId;
 
         @Size(max = 150, message = "Merchant name must be 150 characters or less")
         private String merchantName;
@@ -39,7 +39,9 @@ public class ExpenseDto {
 
     @Data
     public static class Response {
-        private UUID                  id;      // ← UUID
+        private UUID                  id;
+        /** The user who created this expense — used for group member attribution */
+        private UUID                  userId;
         private BigDecimal            amount;
         private Expense.Currency      currency;
         private BigDecimal            amountBase;
