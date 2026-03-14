@@ -22,32 +22,21 @@ public class GroupController {
 
     private final GroupService groupService;
 
-    /** All groups the current user belongs to */
     @GetMapping("/mine")
-    public ResponseEntity<?> getMyGroups(
-        @AuthenticationPrincipal UserDetails principal
-    ) {
+    public ResponseEntity<?> getMyGroups(@AuthenticationPrincipal UserDetails principal) {
         UUID userId = UUID.fromString(principal.getUsername());
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "data",    groupService.getMyGroups(userId)
-        ));
+        return ResponseEntity.ok(Map.of("success", true, "data", groupService.getMyGroups(userId)));
     }
 
-    /** Get a single group by id (must be a member) */
     @GetMapping("/{groupId}")
     public ResponseEntity<?> getGroup(
         @AuthenticationPrincipal UserDetails principal,
         @PathVariable UUID groupId
     ) {
         UUID userId = UUID.fromString(principal.getUsername());
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "data",    groupService.getGroup(userId, groupId)
-        ));
+        return ResponseEntity.ok(Map.of("success", true, "data", groupService.getGroup(userId, groupId)));
     }
 
-    /** Create a new group — caller becomes the owner */
     @PostMapping
     public ResponseEntity<?> create(
         @AuthenticationPrincipal UserDetails principal,
@@ -55,13 +44,25 @@ public class GroupController {
     ) {
         UUID userId = UUID.fromString(principal.getUsername());
         return ResponseEntity.status(201).body(Map.of(
-            "success", true,
-            "message", "Group created",
-            "data",    groupService.create(userId, req)
+            "success", true, "message", "Group created",
+            "data", groupService.create(userId, req)
         ));
     }
 
-    /** Join a group via its 8-character invite code */
+    /** Rename a group — owner only */
+    @PatchMapping("/{groupId}")
+    public ResponseEntity<?> rename(
+        @AuthenticationPrincipal UserDetails principal,
+        @PathVariable UUID groupId,
+        @Valid @RequestBody GroupDto.UpdateRequest req
+    ) {
+        UUID userId = UUID.fromString(principal.getUsername());
+        return ResponseEntity.ok(Map.of(
+            "success", true, "message", "Group renamed",
+            "data", groupService.rename(userId, groupId, req)
+        ));
+    }
+
     @PostMapping("/join")
     public ResponseEntity<?> join(
         @AuthenticationPrincipal UserDetails principal,
@@ -69,28 +70,18 @@ public class GroupController {
         HttpServletRequest httpRequest
     ) {
         UUID userId = UUID.fromString(principal.getUsername());
-        String ip   = extractIp(httpRequest);
-
+        String ip = extractIp(httpRequest);
         try {
             GroupDto.Response group = groupService.join(userId, req, ip);
-            return ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "Joined group",
-                "data",    group
-            ));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Joined group", "data", group));
         } catch (GroupService.RateLimitException ex) {
             HttpHeaders headers = new HttpHeaders();
             headers.set("Retry-After", String.valueOf(ex.getRetryAfterSeconds()));
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                .headers(headers)
-                .body(Map.of(
-                    "success", false,
-                    "message", ex.getMessage()
-                ));
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).headers(headers)
+                .body(Map.of("success", false, "message", ex.getMessage()));
         }
     }
 
-    /** Leave a group (non-owners only) */
     @DeleteMapping("/{groupId}/leave")
     public ResponseEntity<?> leave(
         @AuthenticationPrincipal UserDetails principal,
@@ -101,7 +92,6 @@ public class GroupController {
         return ResponseEntity.ok(Map.of("success", true, "message", "Left group"));
     }
 
-    /** Remove a member — owner only */
     @DeleteMapping("/{groupId}/members/{targetUserId}")
     public ResponseEntity<?> removeMember(
         @AuthenticationPrincipal UserDetails principal,
@@ -113,7 +103,6 @@ public class GroupController {
         return ResponseEntity.ok(Map.of("success", true, "message", "Member removed"));
     }
 
-    /** Dissolve the group entirely — owner only */
     @DeleteMapping("/{groupId}")
     public ResponseEntity<?> dissolve(
         @AuthenticationPrincipal UserDetails principal,
@@ -124,7 +113,6 @@ public class GroupController {
         return ResponseEntity.ok(Map.of("success", true, "message", "Group dissolved"));
     }
 
-    /** Regenerate the invite code — owner only */
     @PostMapping("/{groupId}/invite-code/regenerate")
     public ResponseEntity<?> regenerateInviteCode(
         @AuthenticationPrincipal UserDetails principal,
@@ -132,23 +120,14 @@ public class GroupController {
     ) {
         UUID userId = UUID.fromString(principal.getUsername());
         return ResponseEntity.ok(Map.of(
-            "success", true,
-            "message", "Invite code regenerated",
-            "data",    groupService.regenerateInviteCode(userId, groupId)
+            "success", true, "message", "Invite code regenerated",
+            "data", groupService.regenerateInviteCode(userId, groupId)
         ));
     }
 
-    /* ─── Helpers ───────────────────────────────────────────────── */
-
-    /**
-     * Extracts the real client IP, respecting X-Forwarded-For
-     * for deployments behind a reverse proxy or load balancer.
-     */
     private String extractIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
+        if (forwarded != null && !forwarded.isBlank()) return forwarded.split(",")[0].trim();
         return request.getRemoteAddr();
     }
 }

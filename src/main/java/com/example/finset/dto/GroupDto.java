@@ -11,7 +11,6 @@ import java.util.UUID;
 
 public class GroupDto {
 
-    /* ── Create group ──────────────────────────────────────────── */
     @Data
     public static class CreateRequest {
         @NotBlank(message = "Group name is required")
@@ -19,35 +18,40 @@ public class GroupDto {
         private String name;
     }
 
-    /* ── Join group ────────────────────────────────────────────── */
     @Data
     public static class JoinRequest {
         @NotBlank(message = "Invite code is required")
         private String inviteCode;
     }
 
-    /* ── Member DTO (inside group response) ────────────────────── */
+    /** PATCH /api/groups/{id} — rename */
     @Data
-    public static class MemberResponse {
-        private UUID              id;        // GroupMember id
-        private UUID              userId;
-        private String            name;
-        private String            email;
-        private String            avatar;
-        private GroupMember.Role  role;
-        private LocalDateTime     joinedAt;
+    public static class UpdateRequest {
+        @NotBlank(message = "Group name is required")
+        @Size(max = 100, message = "Name must be 100 characters or less")
+        private String name;
     }
 
-    /* ── Full group response ───────────────────────────────────── */
+    @Data
+    public static class MemberResponse {
+        private UUID             id;
+        private UUID             userId;
+        private String           name;
+        private String           email;
+        private String           avatar;
+        private GroupMember.Role role;
+        private LocalDateTime    joinedAt;
+    }
+
     @Data
     public static class Response {
-        private UUID                  id;
-        private String                name;
-        private String                inviteCode;
-        private LocalDateTime         inviteCodeExpiresAt;  // so frontend can show expiry
-        private boolean               inviteCodeExpired;    // convenience flag
-        private UUID                  ownerId;
-        private List<MemberResponse>  members;
-        private LocalDateTime         createdAt;
+        private UUID                 id;
+        private String               name;
+        private String               inviteCode;
+        private LocalDateTime        inviteCodeExpiresAt;
+        private boolean              inviteCodeExpired;
+        private UUID                 ownerId;
+        private List<MemberResponse> members;
+        private LocalDateTime        createdAt;
     }
 }
