@@ -4,6 +4,7 @@ import com.example.finset.entity.Budget;
 import com.example.finset.entity.Group;
 import com.example.finset.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -122,4 +123,10 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {
         @Param("startDate") LocalDate startDate,
         @Param("endDate")   LocalDate endDate
     );
+
+    /* ─── Dissolve group cleanup ─────────────────────────────────── */
+
+    @Modifying
+    @Query("DELETE FROM Budget b WHERE b.group = :group")
+    void deleteAllByGroup(@Param("group") Group group);
 }

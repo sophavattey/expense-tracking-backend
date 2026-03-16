@@ -5,6 +5,8 @@ import com.example.finset.entity.Group;
 import com.example.finset.entity.GroupMember;
 import com.example.finset.entity.User;
 import com.example.finset.exception.ResourceNotFoundException;
+import com.example.finset.repository.BudgetRepository;
+import com.example.finset.repository.ExpenseRepository;
 import com.example.finset.repository.GroupMemberRepository;
 import com.example.finset.repository.GroupRepository;
 import com.example.finset.repository.UserRepository;
@@ -29,6 +31,8 @@ public class GroupService {
     private final GroupRepository       groupRepository;
     private final GroupMemberRepository memberRepository;
     private final UserRepository        userRepository;
+    private final BudgetRepository      budgetRepository;
+    private final ExpenseRepository     expenseRepository;
     private final JoinRateLimiter       rateLimiter;
 
     @Transactional(readOnly = true)
@@ -58,7 +62,6 @@ public class GroupService {
         return toResponse(groupRepository.save(group));
     }
 
-    /** Rename a group — owner only */
     @Transactional
     public GroupDto.Response rename(UUID userId, UUID groupId, GroupDto.UpdateRequest req) {
         User  user  = getUser(userId);
@@ -100,31 +103,43 @@ public class GroupService {
     @Transactional
     public void leave(UUID userId, UUID groupId) {
         User  user  = getUser(userId);
-        Group group = groupRepository.findById(groupId)
+        Group group = groupRepository.findByIdWithMembers(groupId)
             .orElseThrow(() -> new ResourceNotFoundException("Group not found."));
         if (group.getOwner().getId().equals(userId))
             throw new IllegalStateException("You are the owner — transfer ownership or dissolve the group instead.");
-        GroupMember member = memberRepository.findByGroupAndUser(group, user)
+        GroupMember member = group.getMembers().stream()
+            .filter(m -> m.getUser().getId().equals(userId))
+            .findFirst()
             .orElseThrow(() -> new ResourceNotFoundException("You are not a member of this group."));
-        memberRepository.delete(member);
+        group.getMembers().remove(member);
+        groupRepository.save(group);
     }
 
     @Transactional
     public void removeMember(UUID requesterId, UUID groupId, UUID targetUserId) {
         User  requester = getUser(requesterId);
-        Group group     = getGroupAndVerifyOwner(groupId, requester);
+        Group group     = groupRepository.findByIdWithMembers(groupId)
+            .orElseThrow(() -> new ResourceNotFoundException("Group not found."));
+        if (!group.getOwner().getId().equals(requester.getId()))
+            throw new SecurityException("Only the group owner can perform this action.");
         if (requesterId.equals(targetUserId))
             throw new IllegalStateException("Use 'leave' to remove yourself.");
-        User targetUser = getUser(targetUserId);
-        GroupMember member = memberRepository.findByGroupAndUser(group, targetUser)
+        GroupMember member = group.getMembers().stream()
+            .filter(m -> m.getUser().getId().equals(targetUserId))
+            .findFirst()
             .orElseThrow(() -> new ResourceNotFoundException("User is not a member of this group."));
-        memberRepository.delete(member);
+        group.getMembers().remove(member);
+        groupRepository.save(group);
     }
 
     @Transactional
     public void dissolve(UUID userId, UUID groupId) {
         User  user  = getUser(userId);
         Group group = getGroupAndVerifyOwner(groupId, user);
+        // Delete child rows first — no ON DELETE CASCADE on expense/budget FKs
+        expenseRepository.deleteAllByGroup(group);
+        budgetRepository.deleteAllByGroup(group);
+        // GroupMember rows cascade via CascadeType.ALL on Group.members
         groupRepository.delete(group);
     }
 
@@ -140,7 +155,7 @@ public class GroupService {
     /* ─── Internal helpers ── */
 
     private Group getGroupAndVerifyMember(UUID groupId, User user) {
-        Group group = groupRepository.findById(groupId)
+        Group group = groupRepository.findByIdWithMembers(groupId)
             .orElseThrow(() -> new ResourceNotFoundException("Group not found."));
         if (!groupRepository.isMember(groupId, user))
             throw new SecurityException("You are not a member of this group.");
@@ -148,7 +163,7 @@ public class GroupService {
     }
 
     private Group getGroupAndVerifyOwner(UUID groupId, User user) {
-        Group group = groupRepository.findById(groupId)
+        Group group = groupRepository.findByIdWithMembers(groupId)
             .orElseThrow(() -> new ResourceNotFoundException("Group not found."));
         if (!group.getOwner().getId().equals(user.getId()))
             throw new SecurityException("Only the group owner can perform this action.");

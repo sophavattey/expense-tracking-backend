@@ -49,7 +49,6 @@ public class GroupController {
         ));
     }
 
-    /** Rename a group — owner only */
     @PatchMapping("/{groupId}")
     public ResponseEntity<?> rename(
         @AuthenticationPrincipal UserDetails principal,

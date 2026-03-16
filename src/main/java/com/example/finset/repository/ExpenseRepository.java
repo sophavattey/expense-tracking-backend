@@ -1,12 +1,14 @@
 package com.example.finset.repository;
 
 import com.example.finset.entity.Expense;
+import com.example.finset.entity.Group;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -85,4 +87,10 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID>,
         @Param("startDate") LocalDate startDate,
         @Param("endDate")   LocalDate endDate
     );
+
+    /* ─── Dissolve group cleanup ─────────────────────────────────── */
+
+    @Modifying
+    @Query("DELETE FROM Expense e WHERE e.group = :group")
+    void deleteAllByGroup(@Param("group") Group group);
 }
