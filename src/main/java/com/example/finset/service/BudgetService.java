@@ -4,6 +4,7 @@ import com.example.finset.dto.BudgetDto;
 import com.example.finset.entity.Budget;
 import com.example.finset.entity.Category;
 import com.example.finset.entity.Group;
+import com.example.finset.entity.GroupMember;
 import com.example.finset.entity.User;
 import com.example.finset.exception.ResourceNotFoundException;
 import com.example.finset.repository.BudgetRepository;
@@ -35,6 +36,7 @@ public class BudgetService {
     private final UserRepository     userRepository;
     private final GroupRepository    groupRepository;
     private final CategoryService    categoryService;
+    private final NotificationService notificationService;   // ← added
 
     /* ─── Read — personal ───────────────────────────────────────── */
 
@@ -77,7 +79,10 @@ public class BudgetService {
             .limitUsd(resolveLimit(req))
             .build();
 
-        return toResponse(budgetRepository.save(budget), userId);
+        BudgetDto.Response saved = toResponse(budgetRepository.save(budget), userId);
+        // ── Check thresholds immediately after creation ───────────
+        checkBudgetThresholds(budget, List.of(userId), false, null);
+        return saved;
     }
 
     /* ─── Create — group (owner only) ───────────────────────────── */
@@ -104,7 +109,10 @@ public class BudgetService {
             .limitUsd(resolveLimit(req))
             .build();
 
-        return toResponse(budgetRepository.save(budget), userId);
+        BudgetDto.Response saved = toResponse(budgetRepository.save(budget), userId);
+        // ── Check thresholds immediately after creation ───────────
+        checkBudgetThresholds(budget, getMemberIds(group), true, group.getName());
+        return saved;
     }
 
     /* ─── Update ────────────────────────────────────────────────── */
@@ -136,7 +144,16 @@ public class BudgetService {
         budget.setPeriod(req.getPeriod());
         budget.setLimitUsd(resolveLimit(req));
 
-        return toResponse(budgetRepository.save(budget), userId);
+        BudgetDto.Response saved = toResponse(budgetRepository.save(budget), userId);
+        // ── Check thresholds after update ─────────────────────────
+        boolean isGroupBudget = budget.getGroup() != null;
+        if (isGroupBudget) {
+            Group g = budget.getGroup();
+            checkBudgetThresholds(budget, getMemberIds(g), true, g.getName());
+        } else {
+            checkBudgetThresholds(budget, List.of(userId), false, null);
+        }
+        return saved;
     }
 
     /* ─── Delete ────────────────────────────────────────────────── */
@@ -181,6 +198,38 @@ public class BudgetService {
                 );
             }
         };
+    }
+
+    /* ─── Budget threshold check — called after create / update ─── */
+
+    /**
+     * Checks current spending against the budget limit.
+     * Fires BUDGET_WARNING at 80%+ or BUDGET_EXCEEDED at 100%+.
+     * Deduplication is handled inside NotificationService (1 per hour per type).
+     */
+    public void checkBudgetThresholds(Budget budget, List<UUID> userIds,
+                                       boolean isGroup, String groupName) {
+        BudgetDto.Status status = toStatus(budget, userIds);
+        int pct = status.getPercentage();
+        if (pct < NEAR_PCT) return; // under threshold — nothing to notify
+
+        List<User> recipients = isGroup
+            ? budget.getGroup().getMembers().stream()
+                .map(GroupMember::getUser).toList()
+            : List.of(budget.getUser());
+
+        String catName    = budget.getCategory() != null
+            ? budget.getCategory().getName() : "Overall";
+        String periodLabel = status.getPeriodLabel();
+        boolean exceeded   = status.isOver();
+
+        for (User recipient : recipients) {
+            notificationService.notifyBudgetThreshold(
+                recipient, catName, pct,
+                status.getRemainingUsd(), exceeded,
+                periodLabel, isGroup, groupName
+            );
+        }
     }
 
     /* ─── Shared summary builder ────────────────────────────────── */
@@ -294,10 +343,6 @@ public class BudgetService {
             .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
     }
 
-    /**
-     * Uses findByIdWithMembers so group.getMembers() is always populated —
-     * avoids LazyInitializationException when iterating members outside a session.
-     */
     private Group getGroupAndVerifyMember(UUID groupId, UUID userId) {
         Group group = groupRepository.findByIdWithMembers(groupId)
             .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
@@ -307,10 +352,6 @@ public class BudgetService {
         return group;
     }
 
-    /**
-     * Uses findByIdWithMembers for consistency — owner check only needs owner,
-     * but members are already loaded and free to use afterward.
-     */
     private Group getGroupAndVerifyOwner(UUID groupId, UUID userId) {
         Group group = groupRepository.findByIdWithMembers(groupId)
             .orElseThrow(() -> new ResourceNotFoundException("Group not found"));

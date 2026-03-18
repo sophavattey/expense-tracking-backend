@@ -30,14 +30,6 @@ public class Expense {
     @JoinColumn(name = "category_id", nullable = false)
     private Category category;
 
-    /**
-     * null  → personal expense (only visible to the owner)
-     * set   → group expense (visible to all group members)
-     *
-     * Personal and group expenses are fully isolated:
-     * - POST /api/expenses           → group = null
-     * - POST /api/expenses/group/{id} → group = that group
-     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "group_id")
     private Group group;
@@ -72,5 +64,5 @@ public class Expense {
     private LocalDateTime updatedAt;
 
     public enum Currency      { USD, KHR }
-    public enum PaymentMethod { CASH, CARD, KHQR, BANK, APP, OTHER }
+    public enum PaymentMethod { CASH, BANK, CARD, EWALLET, OTHER }
 }

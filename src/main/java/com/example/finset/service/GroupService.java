@@ -34,6 +34,7 @@ public class GroupService {
     private final BudgetRepository      budgetRepository;
     private final ExpenseRepository     expenseRepository;
     private final JoinRateLimiter       rateLimiter;
+    private final NotificationService   notificationService;   // ← added
 
     @Transactional(readOnly = true)
     public List<GroupDto.Response> getMyGroups(UUID userId) {
@@ -92,6 +93,8 @@ public class GroupService {
         GroupMember member = GroupMember.builder().group(group).user(user).role(GroupMember.Role.MEMBER).build();
         try {
             memberRepository.saveAndFlush(member);
+            // ── Notify group owner ────────────────────────────────
+            notificationService.notifyMemberJoined(group, user);
         } catch (org.springframework.dao.DataIntegrityViolationException ex) {
             return groupRepository.findAllByMember(user).stream()
                 .filter(g -> g.getId().equals(group.getId())).findFirst().map(this::toResponse).orElseThrow();
@@ -113,6 +116,8 @@ public class GroupService {
             .orElseThrow(() -> new ResourceNotFoundException("You are not a member of this group."));
         group.getMembers().remove(member);
         groupRepository.save(group);
+        // ── Notify group owner ────────────────────────────────────
+        notificationService.notifyMemberLeft(group, user, false);
     }
 
     @Transactional
@@ -128,18 +133,20 @@ public class GroupService {
             .filter(m -> m.getUser().getId().equals(targetUserId))
             .findFirst()
             .orElseThrow(() -> new ResourceNotFoundException("User is not a member of this group."));
+        // Capture target user before removal
+        User target = member.getUser();
         group.getMembers().remove(member);
         groupRepository.save(group);
+        // ── Notify group owner ────────────────────────────────────
+        notificationService.notifyMemberLeft(group, target, true);
     }
 
     @Transactional
     public void dissolve(UUID userId, UUID groupId) {
         User  user  = getUser(userId);
         Group group = getGroupAndVerifyOwner(groupId, user);
-        // Delete child rows first — no ON DELETE CASCADE on expense/budget FKs
         expenseRepository.deleteAllByGroup(group);
         budgetRepository.deleteAllByGroup(group);
-        // GroupMember rows cascade via CascadeType.ALL on Group.members
         groupRepository.delete(group);
     }
 
@@ -152,7 +159,7 @@ public class GroupService {
         return toResponse(groupRepository.save(group));
     }
 
-    /* ─── Internal helpers ── */
+    /* ─── Internal helpers ───────────────────────────────────────── */
 
     private Group getGroupAndVerifyMember(UUID groupId, User user) {
         Group group = groupRepository.findByIdWithMembers(groupId)

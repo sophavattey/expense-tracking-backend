@@ -6,12 +6,14 @@ import com.example.finset.entity.Expense;
 import com.example.finset.entity.Group;
 import com.example.finset.entity.User;
 import com.example.finset.exception.ResourceNotFoundException;
+import com.example.finset.repository.BudgetRepository;
 import com.example.finset.repository.CategoryRepository;
 import com.example.finset.repository.ExpenseRepository;
 import com.example.finset.repository.ExpenseSpec;
 import com.example.finset.repository.GroupRepository;
 import com.example.finset.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -35,7 +37,11 @@ public class ExpenseService {
     private final CategoryRepository categoryRepository;
     private final UserRepository     userRepository;
     private final GroupRepository    groupRepository;
+    private final BudgetRepository   budgetRepository;
     private final CategoryService    categoryService;
+    private final NotificationService notificationService;  // ← added
+    @Lazy
+    private final BudgetService      budgetService;         // ← added (@Lazy avoids circular dep)
 
     private BigDecimal toUsdBase(BigDecimal amount, Expense.Currency currency) {
         if (currency == Expense.Currency.USD) return amount;
@@ -76,7 +82,7 @@ public class ExpenseService {
         Expense expense = Expense.builder()
             .user(user)
             .category(category)
-            .group(null)                          // ← explicitly personal
+            .group(null)
             .amount(req.getAmount())
             .currency(req.getCurrency())
             .amountBase(toUsdBase(req.getAmount(), req.getCurrency()))
@@ -88,13 +94,14 @@ public class ExpenseService {
                 : Expense.PaymentMethod.CASH)
             .build();
 
-        return toResponse(expenseRepository.save(expense));
+        ExpenseDto.Response saved = toResponse(expenseRepository.save(expense));
+
+        // ── Check personal budget thresholds ─────────────────────
+        checkPersonalBudgetThresholds(userId, user);
+
+        return saved;
     }
 
-    /**
-     * Creates an expense scoped to a group.
-     * group_id is set on the row — it will NOT appear in personal expense queries.
-     */
     @Transactional
     public ExpenseDto.Response createForGroup(UUID userId, UUID groupId, ExpenseDto.Request req) {
         Group group = getGroupAndVerifyMember(groupId, userId);
@@ -109,7 +116,7 @@ public class ExpenseService {
         Expense expense = Expense.builder()
             .user(user)
             .category(category)
-            .group(group)                         // ← scoped to this group
+            .group(group)
             .amount(req.getAmount())
             .currency(req.getCurrency())
             .amountBase(toUsdBase(req.getAmount(), req.getCurrency()))
@@ -121,7 +128,18 @@ public class ExpenseService {
                 : Expense.PaymentMethod.CASH)
             .build();
 
-        return toResponse(expenseRepository.save(expense));
+        ExpenseDto.Response saved = toResponse(expenseRepository.save(expense));
+
+        // ── Notify other group members ────────────────────────────
+        String display = expense.getMerchantName() != null
+            ? expense.getMerchantName()
+            : expense.getCategory().getName();
+        notificationService.notifyGroupExpenseAdded(group, user, display, expense.getAmountBase());
+
+        // ── Check group budget thresholds ─────────────────────────
+        checkGroupBudgetThresholds(group);
+
+        return saved;
     }
 
     @Transactional
@@ -170,10 +188,6 @@ public class ExpenseService {
 
     /* ─── Group ──────────────────────────────────────────────────── */
 
-    /**
-     * Returns paginated expenses scoped to the group (group_id = groupId).
-     * Personal expenses of the same members are NOT included.
-     */
     public ExpenseDto.PageResponse getGroupExpenses(
         UUID requesterId, UUID groupId,
         UUID categoryId,
@@ -191,9 +205,6 @@ public class ExpenseService {
         return toPageResponse(result);
     }
 
-    /**
-     * Returns monthly summary scoped to the group (group_id = groupId).
-     */
     public ExpenseDto.MonthlySummary getGroupMonthlySummary(
         UUID requesterId, UUID groupId, int year, int month
     ) {
@@ -210,6 +221,40 @@ public class ExpenseService {
             .sumByCategoryForGroupAndMonth(groupId, startDate, endDate);
 
         return buildMonthlySummary(year, month, totalUsd, rows);
+    }
+
+    /* ─── Budget threshold helpers ───────────────────────────────── */
+
+    /**
+     * After a personal expense is saved, check all personal budgets
+     * for the user and fire notifications if any threshold is crossed.
+     */
+    private void checkPersonalBudgetThresholds(UUID userId, User user) {
+        try {
+            var budgets = budgetRepository.findAllByUserWithCategory(user);
+            for (var budget : budgets) {
+                budgetService.checkBudgetThresholds(budget, List.of(userId), false, null);
+            }
+        } catch (Exception e) {
+            // Never fail the main expense creation due to notification errors
+        }
+    }
+
+    /**
+     * After a group expense is saved, check all group budgets
+     * and fire notifications if any threshold is crossed.
+     */
+    private void checkGroupBudgetThresholds(Group group) {
+        try {
+            var budgets = budgetRepository.findAllByGroup(group);
+            List<UUID> memberIds = group.getMembers().stream()
+                .map(m -> m.getUser().getId()).toList();
+            for (var budget : budgets) {
+                budgetService.checkBudgetThresholds(budget, memberIds, true, group.getName());
+            }
+        } catch (Exception e) {
+            // Never fail the main expense creation due to notification errors
+        }
     }
 
     /* ─── Shared helpers ─────────────────────────────────────────── */
@@ -270,8 +315,6 @@ public class ExpenseService {
         r.setCategory(categoryService.toResponse(e.getCategory(), userId));
         return r;
     }
-
-    /* ─── Group access helpers ───────────────────────────────────── */
 
     private Group getGroupAndVerifyMember(UUID groupId, UUID userId) {
         Group group = groupRepository.findByIdWithMembers(groupId)
