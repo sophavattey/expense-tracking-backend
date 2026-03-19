@@ -3,7 +3,7 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/finset
+    url: ${SPRING_DATASOURCE_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
@@ -27,16 +27,15 @@ spring:
             scope:
               - email
               - profile
-            redirect-uri: "{baseUrl}/oauth2/callback/{registrationId}"
+            redirect-uri: "${BACKEND_URL}/oauth2/callback/{registrationId}"
 
 app:
   frontend-url: ${FRONTEND_URL}
   jwt:
-    # Generate with: openssl rand -base64 64
     access-secret: ${JWT_ACCESS_SECRET}
     refresh-secret: ${JWT_REFRESH_SECRET}
-    access-expiration-ms: 900000        # 15 minutes
-    refresh-expiration-ms: 604800000   # 7 days
+    access-expiration-ms: 900000
+    refresh-expiration-ms: 604800000
   cookie:
-    secure: ${COOKIE_SECURE:false}      # set true in production (HTTPS)
-    same-site: Lax
+    secure: ${COOKIE_SECURE:true}
+    same-site: ${COOKIE_SAME_SITE:None}
