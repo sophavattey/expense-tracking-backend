@@ -68,12 +68,13 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {
         @Param("excludeId")  UUID excludeId
     );
 
-    /* ─── Spend queries — PERSONAL (single userId) ───────────────── */
+    /* ─── Spend queries — PERSONAL (single userId, group IS NULL) ── */
 
     @Query("""
         SELECT COALESCE(SUM(e.amountBase), 0) FROM Expense e
         WHERE e.user.id     = :userId
           AND e.category.id = :categoryId
+          AND e.group       IS NULL
           AND e.date        >= :startDate
           AND e.date        <  :endDate
         """)
@@ -87,6 +88,7 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {
     @Query("""
         SELECT COALESCE(SUM(e.amountBase), 0) FROM Expense e
         WHERE e.user.id  = :userId
+          AND e.group    IS NULL
           AND e.date    >= :startDate
           AND e.date     < :endDate
         """)
@@ -96,17 +98,17 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {
         @Param("endDate")   LocalDate endDate
     );
 
-    /* ─── Spend queries — GROUP (all member userIds) ─────────────── */
+    /* ─── Spend queries — GROUP (filter by groupId) ──────────────── */
 
     @Query("""
         SELECT COALESCE(SUM(e.amountBase), 0) FROM Expense e
-        WHERE e.user.id      IN :userIds
+        WHERE e.group.id     = :groupId
           AND e.category.id  = :categoryId
           AND e.date         >= :startDate
           AND e.date         <  :endDate
         """)
     BigDecimal sumSpentForCategoryByGroup(
-        @Param("userIds")    List<UUID> userIds,
+        @Param("groupId")    UUID groupId,
         @Param("categoryId") UUID categoryId,
         @Param("startDate")  LocalDate startDate,
         @Param("endDate")    LocalDate endDate
@@ -114,12 +116,12 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {
 
     @Query("""
         SELECT COALESCE(SUM(e.amountBase), 0) FROM Expense e
-        WHERE e.user.id  IN :userIds
-          AND e.date    >= :startDate
-          AND e.date     < :endDate
+        WHERE e.group.id  = :groupId
+          AND e.date     >= :startDate
+          AND e.date      < :endDate
         """)
     BigDecimal sumSpentOverallByGroup(
-        @Param("userIds")   List<UUID> userIds,
+        @Param("groupId")   UUID groupId,
         @Param("startDate") LocalDate startDate,
         @Param("endDate")   LocalDate endDate
     );

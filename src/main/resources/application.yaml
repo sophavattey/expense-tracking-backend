@@ -37,5 +37,5 @@ app:
     access-expiration-ms: 900000
     refresh-expiration-ms: 604800000
   cookie:
-    secure: ${COOKIE_SECURE:true}
-    same-site: ${COOKIE_SAME_SITE:None}
+    secure: ${COOKIE_SECURE}
+    same-site: ${COOKIE_SAME_SITE}

@@ -31,12 +31,12 @@ public class BudgetService {
     private static final BigDecimal KHR_RATE = new BigDecimal("4000");
     private static final int        NEAR_PCT = 80;
 
-    private final BudgetRepository   budgetRepository;
-    private final CategoryRepository categoryRepository;
-    private final UserRepository     userRepository;
-    private final GroupRepository    groupRepository;
-    private final CategoryService    categoryService;
-    private final NotificationService notificationService;   // ← added
+    private final BudgetRepository    budgetRepository;
+    private final CategoryRepository  categoryRepository;
+    private final UserRepository      userRepository;
+    private final GroupRepository     groupRepository;
+    private final CategoryService     categoryService;
+    private final NotificationService notificationService;
 
     /* ─── Read — personal ───────────────────────────────────────── */
 
@@ -44,17 +44,21 @@ public class BudgetService {
     public BudgetDto.Summary getStatus(UUID userId) {
         User user = getUser(userId);
         List<Budget> budgets = budgetRepository.findAllByUserWithCategory(user);
-        return buildSummary(budgets, List.of(userId));
+        // Pass null groupId → personal mode (e.group IS NULL filter applied in repo)
+        return buildSummary(budgets, userId, null);
     }
 
     /* ─── Read — group ──────────────────────────────────────────── */
 
     @Transactional(readOnly = true)
     public BudgetDto.Summary getGroupStatus(UUID userId, UUID groupId) {
-        Group      group   = getGroupAndVerifyMember(groupId, userId);
-        List<UUID> members = getMemberIds(group);
-        List<Budget> budgets = budgetRepository.findAllByGroup(group);
-        return buildSummary(budgets, members);
+        getGroupAndVerifyMember(groupId, userId);
+        List<Budget> budgets = budgetRepository.findAllByGroup(
+            groupRepository.findByIdWithMembers(groupId)
+                .orElseThrow(() -> new ResourceNotFoundException("Group not found"))
+        );
+        // Pass groupId → group mode (e.group.id = groupId filter applied in repo)
+        return buildSummary(budgets, userId, groupId);
     }
 
     /* ─── Create — personal ─────────────────────────────────────── */
@@ -80,8 +84,7 @@ public class BudgetService {
             .build();
 
         BudgetDto.Response saved = toResponse(budgetRepository.save(budget), userId);
-        // ── Check thresholds immediately after creation ───────────
-        checkBudgetThresholds(budget, List.of(userId), false, null);
+        checkBudgetThresholds(budget, userId, null, false, null);
         return saved;
     }
 
@@ -110,8 +113,7 @@ public class BudgetService {
             .build();
 
         BudgetDto.Response saved = toResponse(budgetRepository.save(budget), userId);
-        // ── Check thresholds immediately after creation ───────────
-        checkBudgetThresholds(budget, getMemberIds(group), true, group.getName());
+        checkBudgetThresholds(budget, userId, groupId, true, group.getName());
         return saved;
     }
 
@@ -145,13 +147,12 @@ public class BudgetService {
         budget.setLimitUsd(resolveLimit(req));
 
         BudgetDto.Response saved = toResponse(budgetRepository.save(budget), userId);
-        // ── Check thresholds after update ─────────────────────────
         boolean isGroupBudget = budget.getGroup() != null;
         if (isGroupBudget) {
-            Group g = budget.getGroup();
-            checkBudgetThresholds(budget, getMemberIds(g), true, g.getName());
+            UUID gid = budget.getGroup().getId();
+            checkBudgetThresholds(budget, userId, gid, true, budget.getGroup().getName());
         } else {
-            checkBudgetThresholds(budget, List.of(userId), false, null);
+            checkBudgetThresholds(budget, userId, null, false, null);
         }
         return saved;
     }
@@ -200,28 +201,22 @@ public class BudgetService {
         };
     }
 
-    /* ─── Budget threshold check — called after create / update ─── */
+    /* ─── Budget threshold check ────────────────────────────────── */
 
-    /**
-     * Checks current spending against the budget limit.
-     * Fires BUDGET_WARNING at 80%+ or BUDGET_EXCEEDED at 100%+.
-     * Deduplication is handled inside NotificationService (1 per hour per type).
-     */
-    public void checkBudgetThresholds(Budget budget, List<UUID> userIds,
+    public void checkBudgetThresholds(Budget budget, UUID userId, UUID groupId,
                                        boolean isGroup, String groupName) {
-        BudgetDto.Status status = toStatus(budget, userIds);
+        BudgetDto.Status status = toStatus(budget, userId, groupId);
         int pct = status.getPercentage();
-        if (pct < NEAR_PCT) return; // under threshold — nothing to notify
+        if (pct < NEAR_PCT) return;
 
         List<User> recipients = isGroup
             ? budget.getGroup().getMembers().stream()
                 .map(GroupMember::getUser).toList()
             : List.of(budget.getUser());
 
-        String catName    = budget.getCategory() != null
-            ? budget.getCategory().getName() : "Overall";
-        String periodLabel = status.getPeriodLabel();
-        boolean exceeded   = status.isOver();
+        String  catName     = budget.getCategory() != null ? budget.getCategory().getName() : "Overall";
+        boolean exceeded    = status.isOver();
+        String  periodLabel = status.getPeriodLabel();
 
         for (User recipient : recipients) {
             notificationService.notifyBudgetThreshold(
@@ -234,9 +229,9 @@ public class BudgetService {
 
     /* ─── Shared summary builder ────────────────────────────────── */
 
-    private BudgetDto.Summary buildSummary(List<Budget> budgets, List<UUID> userIds) {
+    private BudgetDto.Summary buildSummary(List<Budget> budgets, UUID userId, UUID groupId) {
         List<BudgetDto.Status> statuses = budgets.stream()
-            .map(b -> toStatus(b, userIds))
+            .map(b -> toStatus(b, userId, groupId))
             .toList();
 
         BigDecimal totalLimit = statuses.stream()
@@ -261,19 +256,24 @@ public class BudgetService {
 
     /* ─── toStatus ──────────────────────────────────────────────── */
 
-    private BudgetDto.Status toStatus(Budget b, List<UUID> userIds) {
+    private BudgetDto.Status toStatus(Budget b, UUID userId, UUID groupId) {
         PeriodRange range = currentPeriod(b);
 
         BigDecimal spent;
-        if (userIds.size() == 1) {
-            UUID uid = userIds.get(0);
+        if (groupId != null) {
+            // GROUP mode — filter by groupId only (not by user)
             spent = b.getCategory() != null
-                ? budgetRepository.sumSpentForCategory(uid, b.getCategory().getId(), range.start(), range.end())
-                : budgetRepository.sumSpentOverall(uid, range.start(), range.end());
+                ? budgetRepository.sumSpentForCategoryByGroup(
+                    groupId, b.getCategory().getId(), range.start(), range.end())
+                : budgetRepository.sumSpentOverallByGroup(
+                    groupId, range.start(), range.end());
         } else {
+            // PERSONAL mode — filter by userId AND group IS NULL
             spent = b.getCategory() != null
-                ? budgetRepository.sumSpentForCategoryByGroup(userIds, b.getCategory().getId(), range.start(), range.end())
-                : budgetRepository.sumSpentOverallByGroup(userIds, range.start(), range.end());
+                ? budgetRepository.sumSpentForCategory(
+                    userId, b.getCategory().getId(), range.start(), range.end())
+                : budgetRepository.sumSpentOverall(
+                    userId, range.start(), range.end());
         }
 
         BigDecimal limit     = b.getLimitUsd();
@@ -286,12 +286,10 @@ public class BudgetService {
             : spent.multiply(BigDecimal.valueOf(100))
                 .divide(limit, 0, RoundingMode.HALF_UP).intValue();
 
-        UUID displayUserId = userIds.get(0);
-
         BudgetDto.Status s = new BudgetDto.Status();
         s.setId(b.getId());
         s.setCategory(b.getCategory() != null
-            ? categoryService.toResponse(b.getCategory(), displayUserId) : null);
+            ? categoryService.toResponse(b.getCategory(), userId) : null);
         s.setPeriod(b.getPeriod());
         s.setLimitUsd(limit);
         s.setLimitKhr(limitKhr);

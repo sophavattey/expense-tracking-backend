@@ -39,9 +39,9 @@ public class ExpenseService {
     private final GroupRepository    groupRepository;
     private final BudgetRepository   budgetRepository;
     private final CategoryService    categoryService;
-    private final NotificationService notificationService;  // ← added
+    private final NotificationService notificationService;
     @Lazy
-    private final BudgetService      budgetService;         // ← added (@Lazy avoids circular dep)
+    private final BudgetService      budgetService;
 
     private BigDecimal toUsdBase(BigDecimal amount, Expense.Currency currency) {
         if (currency == Expense.Currency.USD) return amount;
@@ -96,7 +96,7 @@ public class ExpenseService {
 
         ExpenseDto.Response saved = toResponse(expenseRepository.save(expense));
 
-        // ── Check personal budget thresholds ─────────────────────
+        // Check personal budget thresholds (group IS NULL — only personal budgets)
         checkPersonalBudgetThresholds(userId, user);
 
         return saved;
@@ -130,13 +130,13 @@ public class ExpenseService {
 
         ExpenseDto.Response saved = toResponse(expenseRepository.save(expense));
 
-        // ── Notify other group members ────────────────────────────
+        // Notify group members
         String display = expense.getMerchantName() != null
             ? expense.getMerchantName()
             : expense.getCategory().getName();
         notificationService.notifyGroupExpenseAdded(group, user, display, expense.getAmountBase());
 
-        // ── Check group budget thresholds ─────────────────────────
+        // Check group budget thresholds (filter by groupId)
         checkGroupBudgetThresholds(group);
 
         return saved;
@@ -225,32 +225,25 @@ public class ExpenseService {
 
     /* ─── Budget threshold helpers ───────────────────────────────── */
 
-    /**
-     * After a personal expense is saved, check all personal budgets
-     * for the user and fire notifications if any threshold is crossed.
-     */
     private void checkPersonalBudgetThresholds(UUID userId, User user) {
         try {
             var budgets = budgetRepository.findAllByUserWithCategory(user);
             for (var budget : budgets) {
-                budgetService.checkBudgetThresholds(budget, List.of(userId), false, null);
+                // Pass null groupId → personal mode
+                budgetService.checkBudgetThresholds(budget, userId, null, false, null);
             }
         } catch (Exception e) {
             // Never fail the main expense creation due to notification errors
         }
     }
 
-    /**
-     * After a group expense is saved, check all group budgets
-     * and fire notifications if any threshold is crossed.
-     */
     private void checkGroupBudgetThresholds(Group group) {
         try {
             var budgets = budgetRepository.findAllByGroup(group);
-            List<UUID> memberIds = group.getMembers().stream()
-                .map(m -> m.getUser().getId()).toList();
+            UUID groupId = group.getId();
             for (var budget : budgets) {
-                budgetService.checkBudgetThresholds(budget, memberIds, true, group.getName());
+                // Pass groupId → group mode
+                budgetService.checkBudgetThresholds(budget, null, groupId, true, group.getName());
             }
         } catch (Exception e) {
             // Never fail the main expense creation due to notification errors
